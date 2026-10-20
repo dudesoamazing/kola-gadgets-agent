@@ -84,7 +84,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 | Command | Does |
 | --- | --- |
 | `npm run dev` | Local server on :3000, hot reload |
-| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 70 assertions |
+| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 82 assertions |
 | `npm run typecheck` | `tsconfig.json` (src + scripts) |
 | `npm run build` / `start` | `tsconfig.build.json` → `dist/index.js` (src only, so output isn't nested) |
 | `npm run setup:sheet` | Creates and seeds the ledger tabs; `--force` to replace |
@@ -98,20 +98,21 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 - **Only `verify_payment` writes `amount_paid_ngn`.** No other code path touches it — the "staff can never mark anything paid" rule is structural, not prompt-level.
 - **Double-apply guarded twice:** the Payments row reading `success` with a timestamp short-circuits a repeat verify, and a per-reference in-process lock serialises concurrent calls. Single instance only — scaling out would need the lock in the sheet or a real queue.
 - **Phone numbers normalised to `+234…`** on every comparison, since we still don't know what shape Chord sends.
-- **Resellers can have two numbers.** A People row with `primary_phone` set is a second line; the tools look invoices up by `person.ledger_phone` (primary if set, else the number they messaged from), and payments file under the primary so the balance can't split in two. Only the owner can link a number, by editing the sheet — the agent never accepts "this is my new number". Found this because the go-live note promised it and the code didn't do it.
+- **Resellers can have two numbers**, via `account_id`. Found this gap because the go-live note promised it and the code compared phone numbers. First pass used a `primary_phone` pointer; replaced with the agreed account model, which is cleaner and puts the identity in one column.
 - **Invoice ids normalised on the digits**, so "104", "inv 104" and "INV-104" all resolve.
 
-### Next change: multiple phones per reseller (agreed 20 Oct — not built yet)
+### Accounts, not phone numbers (agreed 20 Oct — built)
 
-- **People tab:** add `account_id` (e.g. `ACC-ADA`). One row per phone; several rows can share an `account_id`. Name and role are the same on every row of an account.
-- **Invoices tab:** replace `reseller_phone` with `account_id`.
-- **Payments tab:** add `account_id`; keep `reseller_phone` as the number that created the link, for audit.
-- **Every ownership check compares accounts:** resolve the sender's phone → `account_id` first, then compare. Never compare phones directly.
-- **`get_sender_role`** also returns `account_id`.
-- **Unknown number claiming an existing name** ("I'm Ada, new number"): reply that Kola needs to add the number before you can help with that account, then `flag_for_owner` with the number and the name given. Never reveal anything about the named account.
-- **Seed data:** give Ada a second number, `+2348020000011`, on `ACC-ADA`. Keep one unknown number for testing the claim flow.
-- **Skill:** add the unknown-number rule to "Who you are talking to", and an example to `references/examples.md`.
-- **Update** `setup:sheet`, the CSV backend and the smoke test: Ada's second number sees the same balance; a link created from one number can be verified from the other.
+Ownership is compared on `account_id`, never on a phone number, so one reseller can carry two phones.
+
+- **People tab** has `account_id` (e.g. `ACC-ADA`). One row per phone; several rows share an account. A row with a blank `account_id` gets `ACC-<phone>` of its own, so a mistyped cell isolates that number instead of lumping it in with someone else's invoices.
+- **Invoices tab** uses `account_id` in place of `reseller_phone`.
+- **Payments tab** has `account_id`, and keeps `reseller_phone` as the number that raised the link — audit only, never access.
+- **`get_sender_role` returns `account_id`.** A second row may leave name or email blank; both fall back to another row on the same account, since Paystack needs an email.
+- **`verify_payment` takes the sender's `phone`** and refuses a reference from another account. Without that, a reference acted as a bearer token for anyone holding it.
+- **Seed data:** Ada has `+2348020000011` on `ACC-ADA`. `+2349999999999` is deliberately left out, for testing the "I'm Ada, new number" flow.
+- **Skill:** the unknown-number rule is in SKILL.md under "Who you are talking to", with examples in `references/examples.md` and the account rules in `references/business.md`.
+- **Tested:** the second line sees the same balance, a link raised on one number is verified from the other, another reseller is refused the reference, and staff can verify any payment.
 
 ### Tools (names must match the skill)
 
@@ -121,7 +122,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 | `get_reseller_balance` | `phone` | Unpaid and part-paid invoices for that reseller, with outstanding amounts and total |
 | `check_invoice_status` | `phone`, `invoice_id` | Status, amount paid/outstanding, collected/when/by whom. Resellers only see their own |
 | `create_payment_link` | `phone`, `invoice_ids[]`, `amount_ngn?` | Resellers only. Validate invoices belong to them and amount ≤ outstanding (≥ ₦50,000 if part); call Paystack initialize with our own reference and invoice IDs in metadata; log the pending row **after** Paystack returns a link; return link + reference |
-| `verify_payment` | `reference` | Any sender, but only references we issued — an unknown one returns `not_found`. Call Paystack verify. On `success`, apply to invoices (oldest first) **once** — reports the existing confirmation if already applied. Any unallocatable remainder is flagged for the owner |
+| `verify_payment` | `phone`, `reference` | Only references we issued — an unknown one returns `not_found` — and only for the sender's own account unless they are staff or the owner. Call Paystack verify. On `success`, apply to invoices (oldest first) **once** — reports the existing confirmation if already applied. Any unallocatable remainder is flagged for the owner |
 | `record_handover` | `phone`, `invoice_id` | Staff and owner. Refuse unless fully paid and not collected — `already_collected` takes precedence over `not_fully_paid`, because "you already gave this away" is the more urgent warning. Set collected, time, staff name |
 | `flag_for_owner` | `phone`, `invoice_id?`, `summary` | Append to Flags tab |
 
@@ -139,14 +140,14 @@ Every tool returns plain, model-readable JSON, and clear errors (`not_found`, `n
 
 Seed data in `data/*.csv`. `npm run setup:sheet` creates the four tabs and fills them — it's also the fastest check that the service account can reach the Sheet (a 403 means it was never shared). Share the Sheet with the service account email as an Editor. Tabs:
 
-- **People:** phone, name, role, email, primary_phone (blank unless this is a reseller's second line, in which case it holds the number their invoices are filed under)
-- **Invoices:** invoice_id, reseller_phone, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
-- **Payments:** reference, reseller_phone, invoice_ids, amount_ngn, status, link, created_at, verified_at
+- **People:** phone, name, role, email, account_id
+- **Invoices:** invoice_id, account_id, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
+- **Payments:** reference, account_id, reseller_phone, invoice_ids, amount_ngn, status, link, created_at, verified_at
 - **Flags:** created_at, phone, invoice_id, summary
 
 Status is derived, not stored: paid = amount_paid ≥ amount.
 
-Changing to account-based ownership — see "Next change" above.
+Ownership is by account — see "Accounts, not phone numbers" above.
 
 ### Hosting
 
@@ -178,15 +179,15 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Seed ledger data (`data/`)
 - [ ] Paystack test account + secret key
 - [ ] Google Cloud project, Sheets API, service account key; create and share the Sheet
-- [ ] GitHub repo (private until submission)
-- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 70 assertions
+- [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
+- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 82 assertions
 - [x] README drafted (`README.md`) — how to run, the seven tools, how AI tools were used
 - [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
-- [ ] Multiple phones per reseller account (see "Next change")
-- [ ] `verify_payment`: add the sender's `phone` and only allow the reseller who owns the payment (by account), staff or the owner — today any sender with a reference can see that payment, which breaks "resellers only see their own"
+- [x] Multiple phones per reseller account — `account_id` on People, Invoices and Payments; see "Accounts, not phone numbers"
+- [x] `verify_payment` takes the sender's `phone` and refuses a reference from another account; staff and the owner may verify any
 - [ ] Use real Paystack test mode (`PAYSTACK_MODE` off mock) for the submission and recording — integration is 25% of the score; keep mock only as the fallback if test mode refuses large amounts
-- [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing
+- [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note now tells Kola how to link a second number
 - [ ] 26 Oct: send Chord email
 - [ ] Register MCP server, upload skill, test every path in the simulator
 - [ ] Record, finish field notes, submit

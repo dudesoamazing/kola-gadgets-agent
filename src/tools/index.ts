@@ -126,7 +126,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           );
         }
 
-        const invoices = await db.listInvoicesFor(person.ledger_phone);
+        const invoices = await db.listInvoicesForAccount(person.account_id);
         const open = invoices.filter(isUnsettled);
 
         if (open.length === 0) {
@@ -172,7 +172,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           });
         }
 
-        if (person.role === "reseller" && invoice.reseller_phone !== person.ledger_phone) {
+        if (person.role === "reseller" && invoice.account_id !== person.account_id) {
           // Deliberately does not confirm or deny what is on the invoice.
           return fail(
             "not_permitted",
@@ -242,7 +242,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
 
         // Every id must exist, belong to this reseller, and still owe money.
         const wanted = invoice_ids.map(normaliseInvoiceId);
-        const all = await db.listInvoicesFor(person.ledger_phone);
+        const all = await db.listInvoicesForAccount(person.account_id);
         const selected: Invoice[] = [];
         for (const id of wanted) {
           const invoice = all.find((candidate) => normaliseInvoiceId(candidate.invoice_id) === id);
@@ -313,7 +313,8 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             // dashboard without opening the sheet.
             metadata: {
               invoice_ids: allocations.map((a) => a.invoice.invoice_id).join(","),
-              reseller_phone: person.ledger_phone,
+              account_id: person.account_id,
+              reseller_phone: person.phone,
               reseller_name: person.name,
               business: config.business.name,
               custom_fields: [
@@ -340,7 +341,9 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         // so the Payments tab never holds a reference that does not exist.
         await db.appendPayment({
           reference: link.reference,
-          reseller_phone: person.ledger_phone,
+          account_id: person.account_id,
+          // The number that raised the link, for audit. Access is by account.
+          reseller_phone: person.phone,
           invoice_ids: allocations.map((a) => a.invoice.invoice_id),
           amount_ngn: amount,
           status: "pending",
@@ -372,18 +375,23 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
     {
       title: "Verify a payment",
       description:
-        "Ask Paystack whether a payment reference actually completed, and if it did, apply the money to the invoices it was raised for — oldest first. This is the only thing that can mark an invoice paid. Safe to call repeatedly: a reference already applied is reported, never applied twice.",
+        "Ask Paystack whether a payment reference actually completed, and if it did, apply the money to the invoices it was raised for — oldest first. This is the only thing that can mark an invoice paid. Pass the sender's number: a reseller may only verify their own account's payments, while staff and the owner may verify any. Safe to call repeatedly: a reference already applied is reported, never applied twice.",
       inputSchema: {
+        phone: phoneArg,
         reference: z
           .string()
           .min(4)
           .describe("The payment reference returned by create_payment_link, e.g. KG-20261020-7F3K2A."),
       },
     },
-    async ({ reference }) =>
+    async ({ phone, reference }) =>
       guard(() =>
         withReferenceLock(reference, async () => {
           const db = ledger();
+          const sender = await resolveSender(db, phone);
+          if ("error" in sender) return sender.error;
+          const { person } = sender;
+
           const payment = await db.findPayment(reference);
 
           // We only verify references we issued. An unknown one means the
@@ -393,6 +401,17 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
               "not_found",
               `${reference.trim()} is not a Kola Gadgets payment reference. Only links created by this agent can be verified. If they paid by bank transfer, flag it for the owner.`,
               { reference: reference.trim() },
+            );
+          }
+
+          // A reference is a bearer token if anyone holding it can read the
+          // payment. Resellers may only verify their own account's payments;
+          // staff and the owner may verify any, so they can settle a dispute.
+          if (person.role === "reseller" && payment.account_id !== person.account_id) {
+            return fail(
+              "not_permitted",
+              `That payment reference does not belong to ${person.name}. Say you can only check their own payments, and reveal nothing about this one.`,
+              { reference: payment.reference },
             );
           }
 
@@ -496,7 +515,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             });
           }
 
-          const remaining = await db.listInvoicesFor(payment.reseller_phone);
+          const remaining = await db.listInvoicesForAccount(payment.account_id);
           const stillOwed = remaining.filter(isUnsettled);
 
           return ok({

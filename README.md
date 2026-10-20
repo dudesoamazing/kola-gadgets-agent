@@ -25,7 +25,7 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | `get_reseller_balance` | reseller | Every unpaid or part-paid invoice, with amounts outstanding and the total |
 | `check_invoice_status` | staff, owner, and the reseller it belongs to | Amount, amount paid, outstanding, collected when and by whom |
 | `create_payment_link` | reseller | Validates the invoices are theirs, creates a Paystack link, logs it as pending |
-| `verify_payment` | anyone | Asks Paystack what really happened and applies the money, oldest invoice first |
+| `verify_payment` | the account it belongs to, plus staff and owner | Asks Paystack what really happened and applies the money, oldest invoice first |
 | `record_handover` | staff, owner | Marks stock handed over — refuses unless the invoice is paid in full |
 | `flag_for_owner` | anyone | Adds a line to the Flags tab for Kola to look at |
 
@@ -34,6 +34,7 @@ Three rules the code enforces, not just the prompt:
 - **Only `verify_payment` can mark an invoice paid.** Nothing else writes `amount_paid_ngn`. No one can talk their way into it — not staff, not someone claiming to be staff.
 - **Verifying the same reference twice never applies the money twice.** The payment row is the record; once it reads `success` with a timestamp, a repeat call reports the existing confirmation instead. Simultaneous calls are serialised per reference.
 - **Roles come from the ledger's People tab, by phone number.** Never from what someone says in the chat.
+- **Ownership is compared on `account_id`, never on a phone number.** A reseller carrying two phones has two People rows on one account, so they see one balance and can pay on either line. Nobody can add a number by asking — only the owner can, in the sheet.
 
 Every tool returns readable JSON with an `ok` flag, and failures come back as codes the skill has wording for (`not_permitted`, `not_found`, `paystack_unreachable`, `not_fully_paid`…) rather than as exceptions. An error Chord can't read is an error the agent will improvise around.
 
@@ -61,7 +62,7 @@ curl -s localhost:3000/health | jq
 npm run smoke
 ```
 
-Boots the server, talks to it with a real MCP client, and walks all seven tools over 70 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
+Boots the server, talks to it with a real MCP client, and walks all seven tools over 82 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a reseller's second phone number, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
 
 To poke at the tools by hand:
 

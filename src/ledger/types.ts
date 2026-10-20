@@ -7,19 +7,18 @@ export interface Person {
   role: Role;
   email: string;
   /**
-   * Set on a second phone to point at the number the invoices are filed under.
-   * Resellers in Computer Village routinely carry two lines, and a balance
-   * that disappears when they message from the other one is worse than no
-   * agent at all. Only the owner can link a number, by editing the sheet.
+   * Who they are in the business, e.g. "ACC-ADA". Several People rows can
+   * share one account_id, which is how a reseller carrying two phones sees
+   * one balance. Ownership is always compared on this, never on the phone
+   * number — only the owner can add a number to an account, in the sheet.
    */
-  primary_phone?: string;
-  /** The number to look invoices up by: primary_phone if set, else phone. */
-  ledger_phone: string;
+  account_id: string;
 }
 
 export interface Invoice {
   invoice_id: string;
-  reseller_phone: string;
+  /** The reseller account that owes this, e.g. "ACC-ADA". Not a phone number. */
+  account_id: string;
   items: string;
   amount_ngn: number;
   amount_paid_ngn: number;
@@ -33,6 +32,9 @@ export type PaymentStatus = "pending" | "success" | "failed" | "abandoned";
 
 export interface Payment {
   reference: string;
+  /** The account the money belongs to. Ownership is compared on this. */
+  account_id: string;
+  /** The number the link was created from — kept for audit, never for access. */
   reseller_phone: string;
   /** Invoice ids this payment was raised against, in the order shown to the reseller. */
   invoice_ids: string[];
@@ -74,7 +76,7 @@ export interface Ledger {
   findPerson(phone: string): Promise<Person | undefined>;
 
   listInvoices(): Promise<Invoice[]>;
-  listInvoicesFor(phone: string): Promise<Invoice[]>;
+  listInvoicesForAccount(accountId: string): Promise<Invoice[]>;
   findInvoice(invoiceId: string): Promise<Invoice | undefined>;
   /** Patch a single invoice row. Only the named fields are written. */
   updateInvoice(invoiceId: string, patch: Partial<Invoice>): Promise<void>;

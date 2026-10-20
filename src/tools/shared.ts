@@ -71,9 +71,8 @@ export function senderView(person: Person) {
     name: person.name,
     role: person.role,
     phone: person.phone,
-    // Only present when they messaged from a linked second line. Worth the
-    // agent knowing, so it doesn't sound surprised to recognise them.
-    ...(person.primary_phone ? { messaging_from_second_number: true } : {}),
+    // The agent needs this to understand that two numbers can be one reseller.
+    account_id: person.account_id,
   };
 }
 

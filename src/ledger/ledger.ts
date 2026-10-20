@@ -1,5 +1,5 @@
-import { normalisePhone, samePhone } from "../lib/format.js";
-import { cell, type TableStore } from "./store.js";
+import { normalisePhone } from "../lib/format.js";
+import { cell, optionalCell, type TableStore } from "./store.js";
 import type { Flag, Invoice, Ledger, Payment, PaymentStatus, Person, Role } from "./types.js";
 
 /**
@@ -51,39 +51,29 @@ export class TableLedger implements Ledger {
       const role = parseRole(cell(row, header, "role"));
       if (!role) continue; // a typo in the role column must not grant access
 
-      // primary_phone is optional, so an older sheet without the column still works.
-      let primary = "";
-      try {
-        primary = normalisePhone(cell(row, header, "primary_phone"));
-      } catch {
-        primary = "";
-      }
-      // A row pointing at itself, or at a number that is not a person, would
-      // silently hide a balance. Ignore it and fall back to this number.
-      const linked = primary !== "" && primary !== wanted ? primary : "";
+      // A row with no account_id gets one of its own, derived from the phone.
+      // That way a missing or mistyped cell isolates that number rather than
+      // lumping it in with someone else's invoices.
+      const account = optionalCell(row, header, "account_id");
+      const accountId = account !== "" ? account.toUpperCase() : `ACC-${wanted}`;
 
-      // A second-line row may leave name and email blank. Paystack needs an
-      // email, so fall back to the primary row rather than failing later.
+      // A second row on an account may leave name or email blank. Paystack
+      // needs an email, so fall back to another row on the same account.
       let name = cell(row, header, "name");
       let email = cell(row, header, "email");
-      if (linked && (name === "" || email === "")) {
-        const primaryRow = rows.find(
-          (candidate) => normalisePhone(cell(candidate, header, "phone")) === linked,
+      if (name === "" || email === "") {
+        const sibling = rows.find(
+          (candidate) =>
+            optionalCell(candidate, header, "account_id").toUpperCase() === accountId &&
+            normalisePhone(cell(candidate, header, "phone")) !== wanted,
         );
-        if (primaryRow) {
-          if (name === "") name = cell(primaryRow, header, "name");
-          if (email === "") email = cell(primaryRow, header, "email");
+        if (sibling) {
+          if (name === "") name = cell(sibling, header, "name");
+          if (email === "") email = cell(sibling, header, "email");
         }
       }
 
-      return {
-        phone: wanted,
-        name,
-        role,
-        email,
-        ...(linked ? { primary_phone: linked } : {}),
-        ledger_phone: linked || wanted,
-      };
+      return { phone: wanted, name, role, email, account_id: accountId };
     }
     return undefined;
   }
@@ -92,7 +82,7 @@ export class TableLedger implements Ledger {
     const { header, rows } = await this.store.readTable("Invoices");
     return rows.map((row) => ({
       invoice_id: cell(row, header, "invoice_id"),
-      reseller_phone: normalisePhone(cell(row, header, "reseller_phone")),
+      account_id: cell(row, header, "account_id").toUpperCase(),
       items: cell(row, header, "items"),
       amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
       amount_paid_ngn: parseAmount(cell(row, header, "amount_paid_ngn")),
@@ -103,9 +93,10 @@ export class TableLedger implements Ledger {
     }));
   }
 
-  async listInvoicesFor(phone: string): Promise<Invoice[]> {
+  async listInvoicesForAccount(accountId: string): Promise<Invoice[]> {
+    const wanted = accountId.trim().toUpperCase();
     const invoices = await this.listInvoices();
-    return invoices.filter((invoice) => samePhone(invoice.reseller_phone, phone)).sort(byOldestFirst);
+    return invoices.filter((invoice) => invoice.account_id === wanted).sort(byOldestFirst);
   }
 
   async findInvoice(invoiceId: string): Promise<Invoice | undefined> {
@@ -140,6 +131,7 @@ export class TableLedger implements Ledger {
       if (cell(row, header, "reference").toUpperCase() !== wanted) continue;
       return {
         reference: cell(row, header, "reference"),
+        account_id: optionalCell(row, header, "account_id").toUpperCase(),
         reseller_phone: normalisePhone(cell(row, header, "reseller_phone")),
         invoice_ids: splitInvoiceIds(cell(row, header, "invoice_ids")),
         amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
@@ -155,6 +147,7 @@ export class TableLedger implements Ledger {
   async appendPayment(payment: Payment): Promise<void> {
     await this.store.appendRow("Payments", [
       payment.reference,
+      payment.account_id,
       payment.reseller_phone,
       payment.invoice_ids.join(","),
       String(Math.round(payment.amount_ngn)),

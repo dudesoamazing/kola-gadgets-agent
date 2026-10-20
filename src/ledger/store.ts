@@ -31,6 +31,12 @@ export function cell(row: string[], header: string[], column: string): string {
   return (row[columnIndex(header, column)] ?? "").trim();
 }
 
+/** Like `cell`, but returns "" for a column the sheet does not have yet. */
+export function optionalCell(row: string[], header: string[], column: string): string {
+  const index = header.findIndex((h) => h.trim().toLowerCase() === column.toLowerCase());
+  return index === -1 ? "" : (row[index] ?? "").trim();
+}
+
 /** A1 column letter for a zero-based index: 0 → A, 26 → AA. */
 export function columnLetter(index: number): string {
   let letter = "";

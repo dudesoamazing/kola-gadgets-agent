@@ -190,7 +190,7 @@ async function main(): Promise<void> {
     // phones and a vanishing balance is worse than no agent at all.
     const second = await call("get_sender_role", { phone: ADA_SECOND });
     check("Ada's second line is recognised", second.role === "reseller", second);
-    check("and flagged as a second number", second.messaging_from_second_number === true, second);
+    check("and shares Ada's account", second.account_id === "ACC-ADA", second);
 
     const secondBalance = await call("get_reseller_balance", { phone: ADA_SECOND });
     check(
@@ -272,12 +272,20 @@ async function main(): Promise<void> {
 
     // --------------------------------------------------- verify, unpaid ----
     section("Verify before paying");
-    const early = await call("verify_payment", { reference });
+    const early = await call("verify_payment", { phone: ADA, reference });
     check("nothing is applied yet", early.applied === false, early);
     check("status is not success", early.payment_status !== "success", early.payment_status);
 
-    const invented = await call("verify_payment", { reference: "KG-20261020-FAKE01" });
+    const invented = await call("verify_payment", { phone: ADA, reference: "KG-20261020-FAKE01" });
     check("an invented reference is refused", invented.error === "not_found", invented);
+
+    // A reference must not act as a bearer token for anyone who holds it.
+    const nosy = await call("verify_payment", { phone: EMEKA, reference });
+    check("another reseller cannot verify Ada's payment", nosy.error === "not_permitted", nosy);
+    check("and learns nothing about it", nosy.amount_ngn === undefined, nosy);
+
+    const staffVerify = await call("verify_payment", { phone: STAFF, reference });
+    check("staff can verify any payment", staffVerify.ok === true, staffVerify);
 
     // ------------------------------------------------- verify, paid once ----
     section("Verify after paying");
@@ -287,8 +295,15 @@ async function main(): Promise<void> {
       body: "outcome=success",
     });
 
-    const applied = await call("verify_payment", { reference });
+    // Verified from her *second* line, against a link raised from her first —
+    // the whole point of account-based ownership.
+    const applied = await call("verify_payment", { phone: ADA_SECOND, reference });
     check("payment confirmed", applied.payment_status === "success" && applied.applied === true, applied);
+    check(
+      "a link raised on one number can be verified from the other",
+      applied.applied === true,
+      applied.applied,
+    );
     check("₦2,710,000 applied", applied.amount_ngn === 2_710_000, applied.amount_ngn);
     check(
       "INV-104 and INV-109 are now paid",
@@ -304,7 +319,7 @@ async function main(): Promise<void> {
 
     // ------------------------------------------- the double-apply guard ----
     section("Verifying twice must not pay twice");
-    const again = await call("verify_payment", { reference });
+    const again = await call("verify_payment", { phone: ADA, reference });
     check("the second verify reports the existing payment", again.already_applied === true, again);
     check("it does not apply anything", again.applied === undefined || again.applied === false, again.applied);
 
@@ -325,8 +340,8 @@ async function main(): Promise<void> {
       body: "outcome=success",
     });
     const [raceA, raceB] = await Promise.all([
-      call("verify_payment", { reference: raceRef }),
-      call("verify_payment", { reference: raceRef }),
+      call("verify_payment", { phone: EMEKA, reference: raceRef }),
+      call("verify_payment", { phone: EMEKA, reference: raceRef }),
     ]);
     const appliedCount = [raceA, raceB].filter((result) => result.applied === true).length;
     check("two simultaneous verifies apply the money once", appliedCount === 1, {
@@ -362,7 +377,7 @@ async function main(): Promise<void> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "outcome=success",
     });
-    const partApplied = await call("verify_payment", { reference: partRef });
+    const partApplied = await call("verify_payment", { phone: ADA, reference: partRef });
     check(
       "INV-107 becomes part_paid, not paid",
       partApplied.applied_to?.[0]?.now_status === "part_paid",
@@ -392,7 +407,7 @@ async function main(): Promise<void> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "outcome=failed",
     });
-    const failed1 = await call("verify_payment", { reference: failRef });
+    const failed1 = await call("verify_payment", { phone: ADA, reference: failRef });
     check("a failed payment is reported, not applied", failed1.applied === false, failed1);
     check("status is failed", failed1.payment_status === "failed", failed1.payment_status);
     const stillOwed = await call("check_invoice_status", { phone: ADA, invoice_id: "INV-107" });
@@ -459,11 +474,11 @@ async function main(): Promise<void> {
     const paymentsCsv = fs.readFileSync(path.join(dir, "payments.csv"), "utf8");
     check(
       "the seed payment rows are untouched",
-      paymentsCsv.includes("KG-SEED-0001,+2348020000001,INV-101,720000,success"),
+      paymentsCsv.includes("KG-SEED-0001,ACC-ADA,+2348020000001,INV-101,720000,success"),
     );
     check(
-      "it is filed under the primary number, not the second line",
-      paymentsCsv.includes(`${secondLink.reference},${ADA}`),
+      "it is filed under the account, with the second line kept for audit",
+      paymentsCsv.includes(`${secondLink.reference},ACC-ADA,${ADA_SECOND}`),
       paymentsCsv.split("\n").find((line) => line.startsWith(String(secondLink.reference))),
     );
     check("verified payments carry a timestamp", new RegExp(`${reference},.*success,.*\\d{2}:\\d{2}`).test(paymentsCsv));

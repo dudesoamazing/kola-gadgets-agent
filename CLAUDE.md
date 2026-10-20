@@ -84,7 +84,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 | Command | Does |
 | --- | --- |
 | `npm run dev` | Local server on :3000, hot reload |
-| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 82 assertions |
+| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 86 assertions |
 | `npm run typecheck` | `tsconfig.json` (src + scripts) |
 | `npm run build` / `start` | `tsconfig.build.json` → `dist/index.js` (src only, so output isn't nested) |
 | `npm run setup:sheet` | Creates and seeds the ledger tabs; `--force` to replace |
@@ -93,7 +93,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 ### Decisions made during the build
 
 - **Two ledger backends behind one interface.** `LEDGER_BACKEND=csv` reads `data/*.csv`, `sheets` reads the real Sheet. Defaults to sheets when `GOOGLE_SHEET_ID` is set. All parsing and business logic lives in `TableLedger`, so the two can't drift. The CSV backend is for dev and the smoke test only — writes are last-one-wins.
-- **`PAYSTACK_MODE=mock`** serves a local two-button checkout page instead of calling Paystack. Lets the whole flow run with no Paystack account, and is the fallback if test mode caps amounts.
+- **`PAYSTACK_MODE=mock`** serves a local two-button checkout page instead of calling Paystack, so the flow runs offline. It is no longer a fallback for large amounts — test mode has no cap — and it must not be what the recording shows. A mock only tests your own assumptions: mine said verify-unknown-reference was a 404, and the real API says 400.
 - **`enableJsonResponse: true` on the transport.** The SDK defaults to SSE; nothing here streams, and JSON is readable with curl. Chord accepts either. Logged in field notes.
 - **Only `verify_payment` writes `amount_paid_ngn`.** No other code path touches it — the "staff can never mark anything paid" rule is structural, not prompt-level.
 - **Double-apply guarded twice:** the Payments row reading `success` with a timestamp short-circuits a repeat verify, and a per-reference in-process lock serialises concurrent calls. Single instance only — scaling out would need the lock in the sheet or a real queue.
@@ -133,8 +133,10 @@ Every tool returns plain, model-readable JSON, and clear errors (`not_found`, `n
 - `POST https://api.paystack.co/transaction/initialize` with `email`, `amount` (**kobo** — ₦2,400,000 = 240000000), `reference`, `metadata` → returns `authorization_url`.
 - `GET https://api.paystack.co/transaction/verify/:reference` → `data.status`: `success`, `failed`, `abandoned`, etc.
 - Header: `Authorization: Bearer sk_test_…`. Paystack requires an email: use the one in People.
-- Check test-mode amount limits early — our amounts are large. `PAYSTACK_MODE=mock` is the fallback if they're refused.
-- A refused initialize (bad key, amount over the cap) and an unreachable Paystack both surface as `paystack_unreachable` with Paystack's own words in `detail`. No pending row is written, so the Payments tab never holds a reference that doesn't exist.
+- **No test-mode amount cap** (checked 20 Oct): ₦2,400,000, ₦4,360,000 and ₦50,000,000 all initialize fine. The risk is retired; `PAYSTACK_MODE=mock` stays only as an offline convenience.
+- **Paystack rejects reserved-TLD emails.** `ada@resellers.test` and `ada@kolagadgets.example` fail with `"email" must be a valid email`; `example.com` and real domains pass. The seed ledger uses `example.com` — do not put `.test` back.
+- **`verify` on an unknown reference is HTTP 400 with `code: transaction_not_found`, not 404.** Matching only on 404 turned an unopened link into "couldn't reach the payment system". An initialized-but-unpaid link returns `abandoned`, which is different and correct.
+- Two failure shapes, deliberately distinct: Paystack **down or slow** → `paystack_unreachable`, "try again in a minute". Paystack **saying no** (bad email, bad key, 4xx validation) → `bad_input`, flagged for the owner, no retry offered, because retrying never helps. Either way no pending row is written, so the Payments tab never holds a reference that doesn't exist.
 
 ### Ledger (Google Sheet)
 
@@ -177,16 +179,16 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Problem and conversation design
 - [x] Skill drafted (`skill/kola-gadgets-payments/`)
 - [x] Seed ledger data (`data/`)
-- [ ] Paystack test account + secret key
+- [x] Paystack test account + secret key — in `.env` (never committed), `PAYSTACK_MODE=live`
 - [ ] Google Cloud project, Sheets API, service account key; create and share the Sheet
 - [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
-- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 82 assertions
+- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 86 assertions
 - [x] README drafted (`README.md`) — how to run, the seven tools, how AI tools were used
 - [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
 - [x] Multiple phones per reseller account — `account_id` on People, Invoices and Payments; see "Accounts, not phone numbers"
 - [x] `verify_payment` takes the sender's `phone` and refuses a reference from another account; staff and the owner may verify any
-- [ ] Use real Paystack test mode (`PAYSTACK_MODE` off mock) for the submission and recording — integration is 25% of the score; keep mock only as the fallback if test mode refuses large amounts
+- [x] Real Paystack test mode proven end to end (20 Oct): tool created a live `checkout.paystack.com` link for ₦2,710,000; a test-card charge then verified, applied to INV-109, marked it paid and safe to release; a second verify reported the existing payment without re-applying; another reseller was refused the reference; staff release worked and refused twice. Two real bugs found and fixed — see field notes
 - [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note now tells Kola how to link a second number
 - [ ] 26 Oct: send Chord email
 - [ ] Register MCP server, upload skill, test every path in the simulator

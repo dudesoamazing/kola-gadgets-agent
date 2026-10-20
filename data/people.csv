@@ -1,8 +1,8 @@
 phone,name,role,email,account_id
-+2348010000001,Kola Adebayo,owner,kola@kolagadgets.test,ACC-KOLA
-+2348010000002,Tunde,staff,tunde@kolagadgets.test,ACC-TUNDE
-+2348010000003,Bisi,staff,bisi@kolagadgets.test,ACC-BISI
-+2348020000001,Ada Okafor,reseller,ada@resellers.test,ACC-ADA
-+2348020000011,Ada Okafor,reseller,ada@resellers.test,ACC-ADA
-+2348020000002,Emeka Nwosu,reseller,emeka@resellers.test,ACC-EMEKA
-+2348020000003,Chidi Eze,reseller,chidi@resellers.test,ACC-CHIDI
++2348010000001,Kola Adebayo,owner,kola@kolagadgets.example.com,ACC-KOLA
++2348010000002,Tunde,staff,tunde@kolagadgets.example.com,ACC-TUNDE
++2348010000003,Bisi,staff,bisi@kolagadgets.example.com,ACC-BISI
++2348020000001,Ada Okafor,reseller,ada.okafor@example.com,ACC-ADA
++2348020000011,Ada Okafor,reseller,ada.okafor@example.com,ACC-ADA
++2348020000002,Emeka Nwosu,reseller,emeka.nwosu@example.com,ACC-EMEKA
++2348020000003,Chidi Eze,reseller,chidi.eze@example.com,ACC-CHIDI

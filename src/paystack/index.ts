@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { fromKobo, toKobo } from "../lib/format.js";
 import { mockPaystack } from "./mock.js";
 import {
+  PaystackRejectedError,
   PaystackUnreachableError,
   type InitializeResult,
   type VerifyResult,
@@ -14,6 +15,9 @@ interface PaystackEnvelope<T> {
   status: boolean;
   message: string;
   data?: T;
+  /** Present on errors, e.g. "transaction_not_found", "invalid_params". */
+  code?: string;
+  type?: string;
 }
 
 async function call<T>(
@@ -96,12 +100,17 @@ export async function initializeTransaction(params: InitializeParams): Promise<I
   });
 
   if (!envelope.status || !envelope.data) {
-    // A rejected initialize (bad key, amount above the test-mode cap) is a
-    // real answer, not a connection problem — but the caller cannot proceed,
-    // so it is still raised. The message carries Paystack's own words.
-    throw new PaystackUnreachableError(
+    // Paystack answered and said no. Separate "bad data" from "bad luck":
+    // a validation error will fail identically on every retry, so it must
+    // not be dressed up as a temporary outage.
+    const rejected =
+      envelope.type === "validation_error" ||
+      envelope.code === "invalid_params" ||
+      (httpStatus >= 400 && httpStatus < 500);
+    const Error_ = rejected ? PaystackRejectedError : PaystackUnreachableError;
+    throw new Error_(
       `Paystack refused to create the payment link: ${envelope.message}`,
-      `HTTP ${httpStatus}`,
+      `HTTP ${httpStatus}${envelope.code ? ` ${envelope.code}` : ""}`,
     );
   }
 
@@ -142,16 +151,24 @@ export async function verifyTransaction(reference: string): Promise<VerifyResult
     { method: "GET" },
   );
 
-  // 404 means Paystack has never seen an attempt on this reference — the link
-  // was created but not opened. That is "nothing paid yet", not a failure.
-  if (httpStatus === 404) {
+  // Paystack has never seen an attempt on this reference — the link was
+  // created but not opened. That is "nothing paid yet", not a failure.
+  //
+  // Verified against the live test API: this comes back as HTTP **400** with
+  // code "transaction_not_found", not the 404 you would expect. Matching only
+  // on 404 turned an unopened link into "couldn't reach the payment system".
+  if (
+    httpStatus === 404 ||
+    envelope.code === "transaction_not_found" ||
+    /transaction reference not found/i.test(envelope.message ?? "")
+  ) {
     return { status: "not_found", reference, amountNgn: 0 };
   }
 
   if (!envelope.status || !envelope.data) {
     throw new PaystackUnreachableError(
       `Paystack could not verify ${reference}: ${envelope.message}`,
-      `HTTP ${httpStatus}`,
+      `HTTP ${httpStatus}${envelope.code ? ` ${envelope.code}` : ""}`,
     );
   }
 
@@ -166,5 +183,5 @@ export async function verifyTransaction(reference: string): Promise<VerifyResult
   };
 }
 
-export { PaystackUnreachableError };
+export { PaystackRejectedError, PaystackUnreachableError };
 export type { InitializeResult, VerifyResult, VerifyStatus };

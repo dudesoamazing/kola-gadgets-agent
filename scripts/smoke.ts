@@ -10,6 +10,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -522,6 +523,62 @@ async function main(): Promise<void> {
     await client.close();
   } finally {
     deadServer.kill("SIGTERM");
+  }
+
+  // --------------------------------------------------- Paystack says no ----
+  // Paystack rejecting our data is not the same as Paystack being down. This
+  // really happened: the seed emails used the reserved .test TLD, so every
+  // initialize came back '"email" must be a valid email'.
+  section("Paystack rejects the request");
+  const stubPort = 3979;
+  const stub = http.createServer((_req, res) => {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: false,
+        message: '"email" must be a valid email',
+        type: "validation_error",
+        code: "invalid_params",
+      }),
+    );
+  });
+  await new Promise<void>((resolve) => {
+    stub.listen(stubPort, "127.0.0.1", () => resolve());
+  });
+
+  const rejectPort = 3980;
+  const rejectServer = await startServer(
+    {
+      MCP_BEARER_TOKEN: TOKEN,
+      LEDGER_BACKEND: "csv",
+      LEDGER_CSV_DIR: dir,
+      PAYSTACK_MODE: "live",
+      PAYSTACK_SECRET_KEY: "sk_test_stub",
+      PAYSTACK_BASE_URL: `http://127.0.0.1:${stubPort}`,
+    },
+    rejectPort,
+  );
+  try {
+    const client = await connect(rejectPort);
+    const result = await client.callTool({
+      name: "create_payment_link",
+      arguments: { phone: EMEKA, invoice_ids: ["INV-113"] },
+    });
+    const payload = ((result as Json).structuredContent ??
+      JSON.parse((result as Json).content[0].text)) as Json;
+    check("a rejected request is bad_input, not paystack_unreachable", payload.error === "bad_input", payload);
+    check("it is flagged for the owner", payload.flagged_for_owner === true, payload);
+    check(
+      "it does not tell the reseller to try again",
+      !String(payload.message).toLowerCase().includes("try again"),
+      payload.message,
+    );
+    const flagsCsv = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
+    check("the flag carries Paystack's own complaint", flagsCsv.includes("must be a valid email"), flagsCsv);
+    await client.close();
+  } finally {
+    rejectServer.kill("SIGTERM");
+    stub.close();
   }
 
   console.log(`\n[1m${passed} passed, ${failed} failed[0m`);

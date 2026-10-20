@@ -36,3 +36,18 @@ export class PaystackUnreachableError extends Error {
     this.name = "PaystackUnreachableError";
   }
 }
+
+/**
+ * Paystack answered and said no — a bad email in the ledger, a malformed
+ * amount, a key that isn't valid. Retrying changes nothing, so this must not
+ * be reported to the reseller as "try again in a minute". It needs the owner.
+ */
+export class PaystackRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly detail?: string,
+  ) {
+    super(message);
+    this.name = "PaystackRejectedError";
+  }
+}

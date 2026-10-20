@@ -12,6 +12,7 @@ import {
 } from "../ledger/index.js";
 import {
   initializeTransaction,
+  PaystackRejectedError,
   PaystackUnreachableError,
   verifyTransaction,
 } from "../paystack/index.js";
@@ -327,6 +328,20 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             },
           });
         } catch (error) {
+          // Paystack said no and will say no again — do not offer a retry.
+          if (error instanceof PaystackRejectedError) {
+            await db.appendFlag({
+              created_at: lagosTimestamp(),
+              phone: person.phone,
+              invoice_id: selected.map((invoice) => invoice.invoice_id).join(","),
+              summary: `Paystack refused to create a payment link for ${person.name}: ${error.message}. Needs Kola to check the ledger details.`,
+            });
+            return fail(
+              "bad_input",
+              `Paystack would not accept these details, so no link was created and nothing has changed on the account. Tell them you cannot send a link right now and that Kola has been told. ${error.message}`,
+              { detail: error.detail, flagged_for_owner: true },
+            );
+          }
           if (error instanceof PaystackUnreachableError) {
             return fail(
               "paystack_unreachable",

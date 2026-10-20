@@ -62,7 +62,7 @@ curl -s localhost:3000/health | jq
 npm run smoke
 ```
 
-Boots the server, talks to it with a real MCP client, and walks all seven tools over 82 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a reseller's second phone number, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
+Boots the server, talks to it with a real MCP client, and walks all seven tools over 86 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a reseller's second phone number, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
 
 To poke at the tools by hand:
 
@@ -80,7 +80,9 @@ npm run setup:sheet      # creates the four tabs and seeds them from data/
 
 Auth is a service-account JWT rather than OAuth on purpose: Chord's `oauth` tool type needs dynamic client registration and Google doesn't support it, so the sheet is reached from this server with its own credentials instead.
 
-**Paystack.** Put the `sk_test_…` key in `PAYSTACK_SECRET_KEY` and set `PAYSTACK_MODE=live`. The server refuses to report healthy on an `sk_live` key. If Paystack test mode turns out to cap transaction amounts — Kola's invoices run to ₦2.4m — `PAYSTACK_MODE=mock` is the fallback that keeps the demo honest about what it's doing.
+**Paystack.** Put the `sk_test_…` key in `PAYSTACK_SECRET_KEY` and set `PAYSTACK_MODE=live`. The server refuses to report healthy on an `sk_live` key.
+
+Two things worth knowing, both learned the hard way against the real test API and written up in the field notes: Paystack **rejects reserved-TLD emails**, so the seed ledger uses `example.com` rather than `.test` — put `.test` back and every payment link fails. And there is **no test-mode amount cap**; ₦50,000,000 initializes fine, so `PAYSTACK_MODE=mock` is an offline convenience only, not a workaround for large invoices.
 
 ### Deploying
 

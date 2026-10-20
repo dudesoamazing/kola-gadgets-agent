@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.local
+# Service-account key — never commit
+service-account*.json
+*-key.json
+# Confidential exercise brief
+docs/brief.md
+.DS_Store

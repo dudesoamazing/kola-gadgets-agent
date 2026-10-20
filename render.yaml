@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: kola-gadgets-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: LEDGER_BACKEND
+        value: sheets
+      - key: PAYSTACK_MODE
+        value: live
+      # Set these in the Render dashboard, not here.
+      - key: MCP_BEARER_TOKEN
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false

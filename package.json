@@ -1,0 +1,31 @@
+{
+  "name": "kola-gadgets-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for the Kola Gadgets payments agent on Chord — Google Sheets ledger + Paystack test mode",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "tsx scripts/smoke.ts",
+    "inspector": "npx -y @modelcontextprotocol/inspector",
+    "setup:sheet": "tsx scripts/setup-sheet.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "express": "^4.21.2",
+    "googleapis": "^186.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

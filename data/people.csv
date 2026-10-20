@@ -1,0 +1,8 @@
+phone,name,role,email,primary_phone
++2348010000001,Kola Adebayo,owner,kola@kolagadgets.test,
++2348010000002,Tunde,staff,tunde@kolagadgets.test,
++2348010000003,Bisi,staff,bisi@kolagadgets.test,
++2348020000001,Ada Okafor,reseller,ada@resellers.test,
++2348020000002,Emeka Nwosu,reseller,emeka@resellers.test,
++2348020000003,Chidi Eze,reseller,chidi@resellers.test,
++2348020000011,Ada Okafor (2nd line),reseller,ada@resellers.test,+2348020000001

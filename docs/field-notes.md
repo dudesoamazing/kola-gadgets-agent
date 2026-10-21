@@ -45,8 +45,26 @@ Template for each note:
 - **Fix or workaround:** Match on the HTTP status **or** `code: "transaction_not_found"` **or** the message text. Confirmed against the live test API: an initialized-but-unpaid link now returns `abandoned` (correct — Paystack does know it), and a reference Paystack never received returns `not_found`. Both produce the same honest sentence to the reseller, and neither touches a balance.
 - **What should change:** Either return 404, or document the 400. More generally: a status-code table for the error codes would stop every integrator guessing. The lesson I'd keep for Chord too — a mock you wrote yourself only tests your assumptions, so probe the real API before the mock hardens them.
 
-### A Google Sheet can't be reached with Chord's OAuth tool type
-- **What happened:** The plan was a Google Sheet as the ledger. Chord's `oauth` auth type needs dynamic client registration; Google's OAuth doesn't support it, so off-the-shelf Sheets MCP servers can't be registered as a Chord tool at all.
-- **How I found the cause:** Chord's MCP auth doc lists `bearer`, `api_key` and `oauth`, with DCR required for `oauth`. Cross-checked against Google's OAuth docs — no DCR endpoint.
-- **Fix or workaround:** Our own server holds a Google service-account JWT and talks to the sheet with its own credentials; Chord only ever sees a bearer token. Side benefit: the sheet is never shared with Chord, and the service account is a single Editor grant the owner can revoke in one click.
-- **What Chord should change:** Say plainly in the auth section that `oauth` only works with providers supporting dynamic client registration, and name Google as a known exception. It's the difference between an afternoon and five minutes.
+### Google Workspace's own MCP servers can't connect, because Chord's OAuth has no field for a client ID
+- **What happened** (20–21 Oct): The ledger is a Google Sheet, so the obvious route was an existing Sheets MCP server. None of them could be registered in Chord. Community servers mostly run locally, which Chord blocks. Google's own **Sheets MCP server** (`https://sheetsmcp.googleapis.com/mcp/v1`) is hosted publicly and speaks Streamable HTTP, so it passes Chord's transport rules — but it authenticates with OAuth using a **pre-registered client ID and secret**.
+- **How I found the cause:** Chord's MCP connections doc: the `oauth` flow "requires … dynamic client registration", registers a public client automatically, and "providers requiring a pre-registered client ID/secret … need an integration beyond these APIs; there are no request fields for those settings." Google's Sheets MCP doc asks for an OAuth client ID and secret created in advance and doesn't mention dynamic registration. The other auth types don't help either: Google API keys only reach public data, and a static bearer would be a Google access token that expires in about an hour.
+- **Fix or workaround:** Built our own MCP server. It holds a Google service-account credential and reaches the Sheet itself; Chord only ever sees a long-lived bearer token. This turned out to be the better design anyway: Google's server exposes raw cell tools (`update_values`, `update_formulas`), which would let the agent write to *any* cell — including the amount paid. Ours exposes business actions only, so "only a verified Paystack payment marks an invoice paid" is enforced by the tools, not just the prompt.
+- **What Chord should change:** Accept a pre-registered OAuth **client ID and secret** (plus custom scopes) when registering an MCP server, alongside dynamic registration. That would unlock Google Workspace's MCP servers — Sheets, and the rest of the family — which many small businesses already run on. Until then, state in the auth section that `oauth` only works with providers that support dynamic client registration, and name Google as an example that doesn't.
+---
+
+## Setup issues outside Chord
+
+Not Chord problems, so not candidates for the final field notes. Kept here for the README's troubleshooting section and for anyone setting this up again.
+
+### Google blocked service-account keys on a project inside an organisation
+- **What happened** (21 Oct): Creating a JSON key for the service account failed with "Service account key creation is disabled — an Organization Policy that blocks service accounts key creation has been enforced on your organization" (`iam.disableServiceAccountKeyCreation`).
+- **How I found the cause:** Google's troubleshooting docs: the policy is enforced by default on organisations created on or after 3 May 2024. The project had been created inside an organisation rather than under my personal account.
+- **Fix or workaround:** Created a fresh project under my personal Gmail with Location set to "No organization". Key creation worked there. (Alternatives: override the policy for one project as an Organization Policy Administrator, or avoid keys entirely with an Apps Script bridge.)
+- **For the README:** "If key creation is disabled, create the project with no organisation, or ask your organisation admin to override `iam.disableServiceAccountKeyCreation` for this project only."
+
+### Enabled "Sheets MCP API" instead of "Google Sheets API"
+- **What happened** (21 Oct): `npm run setup:sheet` failed with "Google Sheets API has not been used in project 194528009587 before or it is disabled", even though I'd enabled a Sheets API.
+- **How I found the cause:** Matched the service account's email (`…@dotted-transit-244009.iam.gserviceaccount.com`) to the project in the error, then checked the enabled APIs in that project. The one enabled was **Sheets MCP API** — a different product with a near-identical name in the API Library search results.
+- **Fix or workaround:** Enabled **Google Sheets API** in the project the service account belongs to, waited a minute, and reran the script.
+- **For the README:** "Enable **Google Sheets API** — not 'Sheets MCP API' — in the same project as your service account. The error message's link opens the right project."
+- **Related:** checked whether Chord could connect to Google's Sheets MCP server directly — it can't; see "Google Workspace's own MCP servers can't connect" above.

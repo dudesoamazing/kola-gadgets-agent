@@ -136,11 +136,18 @@ Every tool returns plain, model-readable JSON, and clear errors (`not_found`, `n
 - **No test-mode amount cap** (checked 20 Oct): ₦2,400,000, ₦4,360,000 and ₦50,000,000 all initialize fine. The risk is retired; `PAYSTACK_MODE=mock` stays only as an offline convenience.
 - **Paystack rejects reserved-TLD emails.** `ada@resellers.test` and `ada@kolagadgets.example` fail with `"email" must be a valid email`; `example.com` and real domains pass. The seed ledger uses `example.com` — do not put `.test` back.
 - **`verify` on an unknown reference is HTTP 400 with `code: transaction_not_found`, not 404.** Matching only on 404 turned an unopened link into "couldn't reach the payment system". An initialized-but-unpaid link returns `abandoned`, which is different and correct.
+- **Tested so far (21 Oct):** link creation and verify-and-apply are each proven against real Paystack test mode, but **not in one unbroken click-through**. The payment was completed by charging a test card through the API, because Paystack won't let `/charge` reuse an already-initialised reference. The recording needs a real link opened in a browser and paid with test card `4084 0840 8408 4081`, CVV `408`, any future expiry (e.g. 12/30).
 - Two failure shapes, deliberately distinct: Paystack **down or slow** → `paystack_unreachable`, "try again in a minute". Paystack **saying no** (bad email, bad key, 4xx validation) → `bad_input`, flagged for the owner, no retry offered, because retrying never helps. Either way no pending row is written, so the Payments tab never holds a reference that doesn't exist.
 
 ### Ledger (Google Sheet)
 
-Seed data in `data/*.csv`. `npm run setup:sheet` creates the four tabs and fills them — it's also the fastest check that the service account can reach the Sheet (a 403 means it was never shared). Share the Sheet with the service account email as an Editor. Tabs:
+Live: Sheet **kolagadgets**, reached by the `ledger-bot@` service account (ids in `.env`, never committed).
+
+Seed data in `data/*.csv`. `npm run setup:sheet` creates the four tabs and fills them — it's also the fastest check that the service account can reach the Sheet (a 403 means it was never shared). Share the Sheet with the service account email as an Editor.
+
+`setup:sheet -- --force` clears and re-seeds, which is how to put the ledger back to pristine demo numbers after testing. Do this before recording: Ada must owe ₦4,360,000 across INV-104, INV-107 and INV-109, and INV-112 must be part-paid at ₦600,000 of ₦1,200,000.
+
+Tabs:
 
 - **People:** phone, name, role, email, account_id
 - **Invoices:** invoice_id, account_id, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
@@ -172,6 +179,8 @@ Our `/health` returns **503** when the ledger or config is broken and lists the 
 5. **Deployment field notes — the most important part** → `docs/field-notes.md`. Log every problem as it happens: what happened, error, how the cause was found, fix/workaround, what Chord should change.
 6. Go-live note, half a page max, for a non-technical owner → `docs/go-live-note.md`
 
+Live session prep (talking points, likely requirement changes): `docs/live-session.md` — gitignored, not part of the submission.
+
 Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking 15%, Communication 15%. PM weights problem choice + customer thinking; Technical PM weights payment integration + the go-live note.
 
 ## Tasks
@@ -180,7 +189,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Skill drafted (`skill/kola-gadgets-payments/`)
 - [x] Seed ledger data (`data/`)
 - [x] Paystack test account + secret key — in `.env` (never committed), `PAYSTACK_MODE=live`
-- [ ] Google Cloud project, Sheets API, service account key; create and share the Sheet
+- [x] Google Cloud project, Sheets API, service account key; Sheet "kolagadgets" created and shared — verified 21 Oct end to end on `LEDGER_BACKEND=sheets`: `/health` ok, both of Ada's numbers resolve to ACC-ADA, a real Paystack link wrote a pending row, verify applied ₦310,000 to INV-109 and marked it paid, a repeat verify did not re-apply, staff release wrote collected/by/at. Sheet reset to seed data afterwards with `setup:sheet -- --force`
 - [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
 - [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 86 assertions
 - [x] README drafted (`README.md`) — how to run, the seven tools, how AI tools were used
@@ -190,6 +199,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] `verify_payment` takes the sender's `phone` and refuses a reference from another account; staff and the owner may verify any
 - [x] Real Paystack test mode proven end to end (20 Oct): tool created a live `checkout.paystack.com` link for ₦2,710,000; a test-card charge then verified, applied to INV-109, marked it paid and safe to release; a second verify reported the existing payment without re-applying; another reseller was refused the reference; staff release worked and refused twice. Two real bugs found and fixed — see field notes
 - [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note now tells Kola how to link a second number
+- [ ] Rehearse one unbroken click-through on real Paystack test mode: create the link → open it in a browser → pay with the test card → "paid" → `verify_payment` → Sheet updates (see `docs/live-session.md`, "Recording run")
 - [ ] 26 Oct: send Chord email
 - [ ] Register MCP server, upload skill, test every path in the simulator
 - [ ] Record, finish field notes, submit

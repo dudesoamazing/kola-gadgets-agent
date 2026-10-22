@@ -1,23 +1,38 @@
 export type Role = "owner" | "staff" | "reseller";
 
 export interface Person {
-  /** The number this person messaged from. */
-  phone: string;
+  /** The code Kola issued, e.g. "KG-ADA". This is the identity handle. */
+  account_code: string;
   name: string;
   role: Role;
   email: string;
   /**
-   * Who they are in the business, e.g. "ACC-ADA". Several People rows can
-   * share one account_id, which is how a reseller carrying two phones sees
-   * one balance. Ownership is always compared on this, never on the phone
-   * number — only the owner can add a number to an account, in the sheet.
+   * The account invoices and payments are filed under, e.g. "ACC-ADA".
+   * One-to-one with account_code; kept as the ledger's foreign key so the
+   * Invoices and Payments tabs don't carry a credential.
    */
   account_id: string;
+  /** Contact number for Kola's own use. Never used to identify anyone. */
+  phone: string;
 }
+
+/**
+ * Chord never passes the sender's phone number to a teammate or its tools
+ * (confirmed by TSG, 22 Oct), so there is no way to know who is on the other
+ * end of a WhatsApp conversation. Identity has to be proven in the chat
+ * instead: an owner-issued account code plus a 4-digit PIN, checked on every
+ * single call.
+ *
+ * `reason` is for our logs only. Both failures must read the same to the
+ * person in the chat, or the agent becomes an oracle for which codes exist.
+ */
+export type AuthResult =
+  | { ok: true; person: Person }
+  | { ok: false; reason: "unknown_code" | "bad_pin" };
 
 export interface Invoice {
   invoice_id: string;
-  /** The reseller account that owes this, e.g. "ACC-ADA". Not a phone number. */
+  /** The reseller account that owes this, e.g. "ACC-ADA". */
   account_id: string;
   items: string;
   amount_ngn: number;
@@ -34,8 +49,6 @@ export interface Payment {
   reference: string;
   /** The account the money belongs to. Ownership is compared on this. */
   account_id: string;
-  /** The number the link was created from — kept for audit, never for access. */
-  reseller_phone: string;
   /** Invoice ids this payment was raised against, in the order shown to the reseller. */
   invoice_ids: string[];
   amount_ngn: number;
@@ -47,7 +60,8 @@ export interface Payment {
 
 export interface Flag {
   created_at: string;
-  phone: string;
+  /** Who raised it, by account code. Blank when nobody could authenticate. */
+  account_code: string;
   invoice_id: string;
   summary: string;
 }
@@ -68,12 +82,16 @@ export function derivedStatus(invoice: Invoice): DerivedStatus {
 /**
  * Everything the tools need from the ledger. Two implementations: Google
  * Sheets (what the owner actually looks at) and local CSV (so every tool path
- * can be tested before the Sheet exists).
+ * can be tested without credentials).
  */
 export interface Ledger {
   readonly backend: "sheets" | "csv";
 
-  findPerson(phone: string): Promise<Person | undefined>;
+  /**
+   * Check an account code and PIN together. The PIN never leaves this method —
+   * there is deliberately no way to read it back out of the ledger.
+   */
+  authenticate(accountCode: string, pin: string): Promise<AuthResult>;
 
   listInvoices(): Promise<Invoice[]>;
   listInvoicesForAccount(accountId: string): Promise<Invoice[]>;

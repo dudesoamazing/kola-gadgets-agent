@@ -15,11 +15,13 @@ import os from "node:os";
 import path from "node:path";
 
 const TOKEN = "smoke-test-token";
-const OWNER = "+2348010000001";
-const STAFF = "+2348010000002";
-const ADA = "+2348020000001";
-const ADA_SECOND = "+2348020000011";
-const EMEKA = "+2348020000002";
+
+// Credentials, as a person would type them in WhatsApp. Chord never tells a
+// tool who is calling, so every call carries these.
+const OWNER = { account_code: "KG-KOLA", pin: "1042" };
+const STAFF = { account_code: "KG-TUNDE", pin: "2270" };
+const ADA = { account_code: "KG-ADA", pin: "4461" };
+const EMEKA = { account_code: "KG-EMEKA", pin: "5529" };
 
 let passed = 0;
 let failed = 0;
@@ -125,11 +127,23 @@ async function main(): Promise<void> {
 
     const client = await connect(port);
     const call = async (name: string, args: Json): Promise<Json> => {
-      const result = await client.callTool({ name, arguments: args });
+      let result;
+      try {
+        result = await client.callTool({ name, arguments: args });
+      } catch (error) {
+        // A schema refusal arrives as a protocol error, not a tool result.
+        return { ok: false, error: "bad_input", mcp_error: String(error) };
+      }
       const structured = (result as Json).structuredContent;
       if (structured) return structured as Json;
       const text = (result as Json).content?.[0]?.text;
-      return text ? (JSON.parse(text) as Json) : {};
+      if (!text) return {};
+      try {
+        return JSON.parse(text) as Json;
+      } catch {
+        // An input the schema refused comes back as plain text, not our JSON.
+        return { ok: false, error: "bad_input", mcp_error: text };
+      }
     };
 
     const tools = await client.listTools();
@@ -142,7 +156,7 @@ async function main(): Promise<void> {
           "create_payment_link",
           "flag_for_owner",
           "get_reseller_balance",
-          "get_sender_role",
+          "identify",
           "record_handover",
           "verify_payment",
         ]),
@@ -151,27 +165,65 @@ async function main(): Promise<void> {
 
     // -------------------------------------------------------------- roles ---
     section("Roles come from the ledger");
-    const unknown = await call("get_sender_role", { phone: "+2349999999999" });
-    check("an unknown number is refused", unknown.error === "unknown_sender", unknown);
+    const unknown = await call("identify", { account_code: "KG-NOBODY", pin: "0000" });
+    check("an unknown account code is refused", unknown.error === "not_permitted", unknown);
 
-    const ada = await call("get_sender_role", { phone: ADA });
+    const ada = await call("identify", { ...ADA });
     check("Ada is a reseller", ada.role === "reseller" && ada.name === "Ada Okafor", ada);
 
-    const staff = await call("get_sender_role", { phone: STAFF });
+    const staff = await call("identify", { ...STAFF });
     check("Tunde is staff", staff.role === "staff", staff);
 
-    const owner = await call("get_sender_role", { phone: OWNER });
+    const owner = await call("identify", { ...OWNER });
     check("Kola is the owner", owner.role === "owner", owner);
 
-    const localFormat = await call("get_sender_role", { phone: "08020000001" });
-    check("0802… matches the same person as +2348…", localFormat.phone === ADA, localFormat);
+    const spaced = await call("identify", { account_code: "kg ada", pin: "4461" });
+    check('"kg ada" resolves to KG-ADA', spaced.account_code === "KG-ADA", spaced);
 
-    const bareFormat = await call("get_sender_role", { phone: "2348020000001" });
-    check("2348… matches too", bareFormat.phone === ADA, bareFormat);
+    const squashed = await call("identify", { account_code: "kgada", pin: "4 4 6 1" });
+    check('"kgada" and a spaced PIN work too', squashed.account_code === "KG-ADA", squashed);
+
+    const badPin = await call("identify", { ...ADA, pin: "0000" });
+    check("a real code with the wrong PIN is refused", badPin.error === "not_permitted", badPin);
+    // The property that matters: a wrong PIN on a real code is
+    // indistinguishable from a code that does not exist. Otherwise the agent
+    // becomes a way to enumerate which codes are live.
+    check(
+      "a wrong PIN and an unknown code give the identical message",
+      badPin.message === unknown.message,
+      { badPin: badPin.message, unknown: unknown.message },
+    );
+    check("and leaks no name or role", badPin.name === undefined && badPin.role === undefined, badPin);
+
+    const noPin = await call("identify", { account_code: "KG-ADA", pin: "" });
+    check("an empty PIN is refused", noPin.ok !== true, noPin);
+
+    // The PIN must never come back out of any tool, in any field.
+    const ok1 = await call("identify", { ...ADA });
+    check("identify never echoes the PIN", !JSON.stringify(ok1).includes("4461"), ok1);
+
+    // A 4-digit PIN is 10,000 guesses and the agent will answer all day, so
+    // repeated misses have to leave a trace for Kola.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await call("identify", { account_code: "KG-CHIDI", pin: "0001" });
+    }
+    const bruteFlags = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
+    check(
+      "five failed attempts on one code flags the owner",
+      bruteFlags.includes("failed sign-in attempts") && bruteFlags.includes("KG-CHIDI"),
+      bruteFlags,
+    );
+    check("the flag does not record the attempted PIN", !bruteFlags.includes("0001"), bruteFlags);
+    const chidiStillWorks = await call("identify", { account_code: "KG-CHIDI", pin: "6673" });
+    check(
+      "but the account is not locked out — the right PIN still works",
+      chidiStillWorks.role === "reseller",
+      chidiStillWorks,
+    );
 
     // ------------------------------------------------------------ balance ---
     section("Balance");
-    const balance = await call("get_reseller_balance", { phone: ADA });
+    const balance = await call("get_reseller_balance", { ...ADA });
     check("Ada has 3 open invoices", balance.invoices?.length === 3, balance.invoices?.length);
     check(
       "total outstanding is ₦4,360,000",
@@ -184,87 +236,65 @@ async function main(): Promise<void> {
       !(balance.invoices ?? []).some((invoice: Json) => invoice.invoice_id === "INV-101"),
     );
 
-    const staffBalance = await call("get_reseller_balance", { phone: STAFF });
+    const staffBalance = await call("get_reseller_balance", { ...STAFF });
     check("staff have no balance to show", staffBalance.error === "not_permitted", staffBalance);
 
-    // A reseller's second line must see the same balance — they carry two
-    // phones and a vanishing balance is worse than no agent at all.
-    const second = await call("get_sender_role", { phone: ADA_SECOND });
-    check("Ada's second line is recognised", second.role === "reseller", second);
-    check("and shares Ada's account", second.account_id === "ACC-ADA", second);
-
-    const secondBalance = await call("get_reseller_balance", { phone: ADA_SECOND });
-    check(
-      "the second line sees the same ₦4,360,000",
-      secondBalance.total_outstanding_ngn === 4_360_000,
-      secondBalance.total_outstanding_ngn,
-    );
-    check(
-      "and the same three invoices",
-      JSON.stringify((secondBalance.invoices ?? []).map((i: Json) => i.invoice_id)) ===
-        JSON.stringify((balance.invoices ?? []).map((i: Json) => i.invoice_id)),
-      secondBalance.invoices?.map((i: Json) => i.invoice_id),
-    );
-
-    const secondOwn = await call("check_invoice_status", { phone: ADA_SECOND, invoice_id: "INV-109" });
-    check("the second line can check her own invoice", secondOwn.ok === true, secondOwn);
-    const secondPeek = await call("check_invoice_status", { phone: ADA_SECOND, invoice_id: "INV-112" });
-    check(
-      "but still cannot see Emeka's",
-      secondPeek.error === "not_permitted",
-      secondPeek,
-    );
+    // Every tool re-checks the credentials, because there is no session —
+    // Chord hands us nothing about who is on the other end.
+    const balanceBadPin = await call("get_reseller_balance", { ...ADA, pin: "9999" });
+    check("get_reseller_balance re-checks the PIN", balanceBadPin.error === "not_permitted", balanceBadPin);
+    check("and returns no invoices", balanceBadPin.invoices === undefined, balanceBadPin);
 
     // ------------------------------------------------------- invoice reads --
     section("Invoice visibility");
-    const peeking = await call("check_invoice_status", { phone: ADA, invoice_id: "INV-112" });
+    const peeking = await call("check_invoice_status", { ...ADA, invoice_id: "INV-112" });
     check("Ada cannot see Emeka's invoice", peeking.error === "not_permitted", peeking);
     check("and nothing about it leaks", peeking.invoice === undefined, peeking);
 
-    const staffView = await call("check_invoice_status", { phone: STAFF, invoice_id: "INV-112" });
+    const staffView = await call("check_invoice_status", { ...STAFF, invoice_id: "INV-112" });
     check("staff can see any invoice", staffView.ok === true, staffView);
     check("INV-112 reads part_paid", staffView.invoice?.status === "part_paid", staffView.invoice?.status);
     check("INV-112 is not safe to release", staffView.safe_to_release === false, staffView);
 
-    const loose = await call("check_invoice_status", { phone: ADA, invoice_id: "inv 109" });
+    const loose = await call("check_invoice_status", { ...ADA, invoice_id: "inv 109" });
     check('"inv 109" resolves to INV-109', loose.invoice?.invoice_id === "INV-109", loose.invoice);
 
-    const missing = await call("check_invoice_status", { phone: ADA, invoice_id: "INV-999" });
+    const missing = await call("check_invoice_status", { ...ADA, invoice_id: "INV-999" });
     check("a missing invoice is not_found", missing.error === "not_found", missing);
 
     // Checked here, while INV-112 is still part-paid and INV-109 still unpaid.
-    const releasePartPaid = await call("record_handover", { phone: STAFF, invoice_id: "INV-112" });
+    const releasePartPaid = await call("record_handover", { ...STAFF, invoice_id: "INV-112" });
     check(
       "staff cannot release a part-paid invoice",
       releasePartPaid.error === "not_fully_paid",
       releasePartPaid,
     );
-    const releaseUnpaid = await call("record_handover", { phone: STAFF, invoice_id: "INV-109" });
+    const releaseUnpaid = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
     check("staff cannot release an unpaid invoice", releaseUnpaid.error === "not_fully_paid", releaseUnpaid);
 
     // ------------------------------------------------------- payment link ---
     section("Payment link");
-    const foreign = await call("create_payment_link", { phone: ADA, invoice_ids: ["INV-112"] });
+    const foreign = await call("create_payment_link", { ...ADA, invoice_ids: ["INV-112"] });
     check("Ada cannot pay someone else's invoice", foreign.error === "not_found", foreign);
 
-    const staffLink = await call("create_payment_link", { phone: STAFF, invoice_ids: ["INV-104"] });
+    const staffLink = await call("create_payment_link", { ...STAFF, invoice_ids: ["INV-104"] });
     check("staff cannot raise a payment link", staffLink.error === "not_permitted", staffLink);
 
     const tooMuch = await call("create_payment_link", {
-      phone: ADA,
+      ...ADA,
       invoice_ids: ["INV-109"],
       amount_ngn: 500_000,
     });
     check("paying more than is owed is refused", tooMuch.error === "invalid_amount", tooMuch);
 
     const tooLittle = await call("create_payment_link", {
-      phone: ADA,
+      ...ADA,
       invoice_ids: ["INV-104"],
       amount_ngn: 10_000,
     });
     check("a part payment under ₦50,000 is refused", tooLittle.error === "invalid_amount", tooLittle);
 
-    const link = await call("create_payment_link", { phone: ADA, invoice_ids: ["INV-104", "INV-109"] });
+    const link = await call("create_payment_link", { ...ADA, invoice_ids: ["INV-104", "INV-109"] });
     check("link created for INV-104 + INV-109", link.ok === true, link);
     check("charged the full ₦2,710,000", link.amount_ngn === 2_710_000, link.amount_ngn);
     check("it is not flagged as a part payment", link.is_part_payment === false, link.is_part_payment);
@@ -273,19 +303,19 @@ async function main(): Promise<void> {
 
     // --------------------------------------------------- verify, unpaid ----
     section("Verify before paying");
-    const early = await call("verify_payment", { phone: ADA, reference });
+    const early = await call("verify_payment", { ...ADA, reference });
     check("nothing is applied yet", early.applied === false, early);
     check("status is not success", early.payment_status !== "success", early.payment_status);
 
-    const invented = await call("verify_payment", { phone: ADA, reference: "KG-20261020-FAKE01" });
+    const invented = await call("verify_payment", { ...ADA, reference: "KG-20261020-FAKE01" });
     check("an invented reference is refused", invented.error === "not_found", invented);
 
     // A reference must not act as a bearer token for anyone who holds it.
-    const nosy = await call("verify_payment", { phone: EMEKA, reference });
+    const nosy = await call("verify_payment", { ...EMEKA, reference });
     check("another reseller cannot verify Ada's payment", nosy.error === "not_permitted", nosy);
     check("and learns nothing about it", nosy.amount_ngn === undefined, nosy);
 
-    const staffVerify = await call("verify_payment", { phone: STAFF, reference });
+    const staffVerify = await call("verify_payment", { ...STAFF, reference });
     check("staff can verify any payment", staffVerify.ok === true, staffVerify);
 
     // ------------------------------------------------- verify, paid once ----
@@ -296,15 +326,8 @@ async function main(): Promise<void> {
       body: "outcome=success",
     });
 
-    // Verified from her *second* line, against a link raised from her first —
-    // the whole point of account-based ownership.
-    const applied = await call("verify_payment", { phone: ADA_SECOND, reference });
+    const applied = await call("verify_payment", { ...ADA, reference });
     check("payment confirmed", applied.payment_status === "success" && applied.applied === true, applied);
-    check(
-      "a link raised on one number can be verified from the other",
-      applied.applied === true,
-      applied.applied,
-    );
     check("₦2,710,000 applied", applied.amount_ngn === 2_710_000, applied.amount_ngn);
     check(
       "INV-104 and INV-109 are now paid",
@@ -320,11 +343,11 @@ async function main(): Promise<void> {
 
     // ------------------------------------------- the double-apply guard ----
     section("Verifying twice must not pay twice");
-    const again = await call("verify_payment", { phone: ADA, reference });
+    const again = await call("verify_payment", { ...ADA, reference });
     check("the second verify reports the existing payment", again.already_applied === true, again);
     check("it does not apply anything", again.applied === undefined || again.applied === false, again.applied);
 
-    const afterTwice = await call("get_reseller_balance", { phone: ADA });
+    const afterTwice = await call("get_reseller_balance", { ...ADA });
     check(
       "the balance is unchanged after verifying twice",
       afterTwice.total_outstanding_ngn === 1_650_000,
@@ -333,7 +356,7 @@ async function main(): Promise<void> {
 
     // Concurrent verifies of the same reference: the race the lock exists for.
     const racePort = port;
-    const raceLink = await call("create_payment_link", { phone: EMEKA, invoice_ids: ["INV-112"] });
+    const raceLink = await call("create_payment_link", { ...EMEKA, invoice_ids: ["INV-112"] });
     const raceRef = String(raceLink.reference);
     await fetch(`http://127.0.0.1:${racePort}/mock/checkout/${raceRef}`, {
       method: "POST",
@@ -341,28 +364,28 @@ async function main(): Promise<void> {
       body: "outcome=success",
     });
     const [raceA, raceB] = await Promise.all([
-      call("verify_payment", { phone: EMEKA, reference: raceRef }),
-      call("verify_payment", { phone: EMEKA, reference: raceRef }),
+      call("verify_payment", { ...EMEKA, reference: raceRef }),
+      call("verify_payment", { ...EMEKA, reference: raceRef }),
     ]);
     const appliedCount = [raceA, raceB].filter((result) => result.applied === true).length;
     check("two simultaneous verifies apply the money once", appliedCount === 1, {
       a: raceA.applied,
       b: raceB.applied,
     });
-    const emekaAfter = await call("check_invoice_status", { phone: STAFF, invoice_id: "INV-112" });
+    const emekaAfter = await call("check_invoice_status", { ...STAFF, invoice_id: "INV-112" });
     check(
       "INV-112 is paid exactly once (₦1,200,000)",
       emekaAfter.invoice?.amount_paid_ngn === 1_200_000,
       emekaAfter.invoice?.amount_paid_ngn,
     );
 
-    const settled = await call("create_payment_link", { phone: ADA, invoice_ids: ["INV-104"] });
+    const settled = await call("create_payment_link", { ...ADA, invoice_ids: ["INV-104"] });
     check("a settled invoice cannot be billed again", settled.error === "already_paid", settled);
 
     // -------------------------------------------------------- part payment --
     section("Part payment, oldest first");
     const part = await call("create_payment_link", {
-      phone: ADA,
+      ...ADA,
       invoice_ids: ["INV-107"],
       amount_ngn: 1_000_000,
     });
@@ -378,7 +401,7 @@ async function main(): Promise<void> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "outcome=success",
     });
-    const partApplied = await call("verify_payment", { phone: ADA, reference: partRef });
+    const partApplied = await call("verify_payment", { ...ADA, reference: partRef });
     check(
       "INV-107 becomes part_paid, not paid",
       partApplied.applied_to?.[0]?.now_status === "part_paid",
@@ -398,7 +421,7 @@ async function main(): Promise<void> {
     // ------------------------------------------------------ failed payment --
     section("Failed payment");
     const failLink = await call("create_payment_link", {
-      phone: ADA,
+      ...ADA,
       invoice_ids: ["INV-107"],
       amount_ngn: 650_000,
     });
@@ -408,10 +431,10 @@ async function main(): Promise<void> {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "outcome=failed",
     });
-    const failed1 = await call("verify_payment", { phone: ADA, reference: failRef });
+    const failed1 = await call("verify_payment", { ...ADA, reference: failRef });
     check("a failed payment is reported, not applied", failed1.applied === false, failed1);
     check("status is failed", failed1.payment_status === "failed", failed1.payment_status);
-    const stillOwed = await call("check_invoice_status", { phone: ADA, invoice_id: "INV-107" });
+    const stillOwed = await call("check_invoice_status", { ...ADA, invoice_id: "INV-107" });
     check(
       "INV-107 still owes ₦650,000 after the failure",
       stillOwed.invoice?.outstanding_ngn === 650_000,
@@ -420,30 +443,30 @@ async function main(): Promise<void> {
 
     // ----------------------------------------------------------- handover ---
     section("Handover");
-    const resellerRelease = await call("record_handover", { phone: ADA, invoice_id: "INV-109" });
+    const resellerRelease = await call("record_handover", { ...ADA, invoice_id: "INV-109" });
     check("a reseller cannot record a handover", resellerRelease.error === "not_permitted", resellerRelease);
 
     // INV-107 is part-paid *and* was taken on credit. "You already handed this
     // over" is the more urgent warning, so it must win over "not fully paid".
-    const creditRelease = await call("record_handover", { phone: STAFF, invoice_id: "INV-107" });
+    const creditRelease = await call("record_handover", { ...STAFF, invoice_id: "INV-107" });
     check(
       "an already-collected invoice warns about that first",
       creditRelease.error === "already_collected",
       creditRelease,
     );
 
-    const release = await call("record_handover", { phone: STAFF, invoice_id: "INV-109" });
+    const release = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
     check("staff release a paid invoice", release.ok === true, release);
     check("it records Tunde", release.collected_by === "Tunde", release.collected_by);
     check("and a Lagos timestamp", /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(release.collected_at)), release.collected_at);
 
-    const twice = await call("record_handover", { phone: STAFF, invoice_id: "INV-109" });
+    const twice = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
     check("releasing twice is refused", twice.error === "already_collected", twice);
 
     // --------------------------------------------------------------- flag ---
     section("Flag for the owner");
     const flag = await call("flag_for_owner", {
-      phone: ADA,
+      ...ADA,
       invoice_id: "INV-107",
       summary: "Says she paid INV-107 by bank transfer this morning.",
     });
@@ -451,37 +474,37 @@ async function main(): Promise<void> {
     const flagsCsv = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
     check("it reaches the Flags tab", flagsCsv.includes("bank transfer this morning"), flagsCsv);
     check("with the sender's name and role", flagsCsv.includes("Ada Okafor (reseller)"), flagsCsv);
+    check("and the account code, not a phone number", flagsCsv.includes("KG-ADA"), flagsCsv);
 
     const flagUnknown = await call("flag_for_owner", {
-      phone: "+2349999999999",
-      summary: "Unknown number asking about an order.",
+      ...EMEKA,
+      summary: "Asking about an order placed last week.",
     });
-    check("an unknown number can still be flagged", flagUnknown.ok === true, flagUnknown);
+    check("another account can raise its own flag", flagUnknown.ok === true, flagUnknown);
 
     // --------------------------------------------------- ledger integrity ---
     section("Ledger integrity");
     const invoicesCsv = fs.readFileSync(path.join(dir, "invoices.csv"), "utf8");
     const inv104 = invoicesCsv.split("\n").find((line) => line.startsWith("INV-104"));
     check("INV-104 is written as fully paid once", inv104?.includes("2400000,2400000") === true, inv104);
-    // A payment raised from the second line must file under the primary
-    // number, or the balance would split in two.
-    const secondLink = await call("create_payment_link", {
-      phone: ADA_SECOND,
+    const lastLink = await call("create_payment_link", {
+      ...ADA,
       invoice_ids: ["INV-107"],
       amount_ngn: 650_000,
     });
-    check("the second line can raise a payment link", secondLink.ok === true, secondLink);
+    check("a further link can be raised", lastLink.ok === true, lastLink);
 
     const paymentsCsv = fs.readFileSync(path.join(dir, "payments.csv"), "utf8");
     check(
       "the seed payment rows are untouched",
-      paymentsCsv.includes("KG-SEED-0001,ACC-ADA,+2348020000001,INV-101,720000,success"),
+      paymentsCsv.includes("KG-SEED-0001,ACC-ADA,INV-101,720000,success"),
     );
     check(
-      "it is filed under the account, with the second line kept for audit",
-      paymentsCsv.includes(`${secondLink.reference},ACC-ADA,${ADA_SECOND}`),
-      paymentsCsv.split("\n").find((line) => line.startsWith(String(secondLink.reference))),
+      "the new row is filed under the account and carries no phone number",
+      paymentsCsv.includes(`${lastLink.reference},ACC-ADA,INV-107`),
+      paymentsCsv.split("\n").find((line) => line.startsWith(String(lastLink.reference))),
     );
+    check("no PIN is ever written to the ledger", !paymentsCsv.includes("4461"), paymentsCsv);
     check("verified payments carry a timestamp", new RegExp(`${reference},.*success,.*\\d{2}:\\d{2}`).test(paymentsCsv));
 
     await client.close();
@@ -508,7 +531,7 @@ async function main(): Promise<void> {
     const client = await connect(deadPort);
     const result = await client.callTool({
       name: "create_payment_link",
-      arguments: { phone: EMEKA, invoice_ids: ["INV-113"] },
+      arguments: { ...EMEKA, invoice_ids: ["INV-113"] },
     });
     const payload = ((result as Json).structuredContent ??
       JSON.parse((result as Json).content[0].text)) as Json;
@@ -562,7 +585,7 @@ async function main(): Promise<void> {
     const client = await connect(rejectPort);
     const result = await client.callTool({
       name: "create_payment_link",
-      arguments: { phone: EMEKA, invoice_ids: ["INV-113"] },
+      arguments: { ...EMEKA, invoice_ids: ["INV-113"] },
     });
     const payload = ((result as Json).structuredContent ??
       JSON.parse((result as Json).content[0].text)) as Json;

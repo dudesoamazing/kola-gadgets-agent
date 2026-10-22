@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { config } from "../config.js";
-import { lagosTimestamp, naira, normalisePhone } from "../lib/format.js";
+import { lagosTimestamp, naira, normaliseAccountCode } from "../lib/format.js";
 import {
   getLedger,
   normaliseInvoiceId,
@@ -26,32 +26,85 @@ import {
   senderView,
 } from "./shared.js";
 
-const phoneArg = z
+/**
+ * Chord never tells a tool who is messaging, so every call carries the
+ * credentials the person gave in the chat. Checked on every single call —
+ * there is no session and nothing is remembered between messages.
+ */
+const accountCodeArg = z
   .string()
-  .min(7)
-  .describe("The sender's WhatsApp number, any format: +2348020000001, 2348020000001 or 08020000001.");
+  .min(2)
+  .describe('The account code the person gave in the chat, e.g. "KG-ADA". Case and spacing are ignored.');
+
+const pinArg = z
+  .string()
+  .min(3)
+  .describe("The 4-digit PIN the person gave in the chat. Never repeat this back to them.");
 
 const invoiceArg = z
   .string()
   .min(3)
   .describe('An invoice id such as "INV-104". "104" and "inv 104" are accepted too.');
 
-/** Resolve the sender once, consistently, for every tool that needs a role. */
-async function resolveSender(
+/**
+ * Consecutive failed PIN attempts per account code, this process only.
+ *
+ * A 4-digit PIN is 10,000 guesses, and a chat agent will answer all day. We
+ * do not lock the account — that would hand anyone a way to freeze a
+ * reseller out before a pickup — but after five misses Kola gets told, so a
+ * real attempt to guess a code leaves a trace in the Flags tab.
+ */
+const failedAttempts = new Map<string, number>();
+const FAILURES_BEFORE_FLAG = 5;
+
+/**
+ * Check the credentials on this call and return the person, or the refusal
+ * the tool should hand back.
+ *
+ * Unknown code and wrong PIN deliberately produce the same message. Telling
+ * them apart would turn the agent into an oracle for which account codes
+ * exist, and the codes are the only thing standing in front of the ledger.
+ */
+async function authenticated(
   ledger: Ledger,
-  phone: string,
+  accountCode: string,
+  pin: string,
 ): Promise<{ person: Person } | { error: ReturnType<typeof fail> }> {
-  const person = await ledger.findPerson(phone);
-  if (!person) {
+  const code = normaliseAccountCode(accountCode);
+  // What they actually typed, for the owner's benefit — "KG-CHIDl" with a
+  // lowercase L tells Kola it was a typo, where "KGCHIDI" would not.
+  const attempted = (accountCode ?? "").trim().slice(0, 40);
+  const result = await ledger.authenticate(accountCode, pin);
+
+  if (!result.ok) {
+    const misses = (failedAttempts.get(code) ?? 0) + 1;
+    failedAttempts.set(code, misses);
+
+    if (misses === FAILURES_BEFORE_FLAG) {
+      // Best effort: a flag failing must not turn a wrong PIN into a crash.
+      try {
+        await ledger.appendFlag({
+          created_at: lagosTimestamp(),
+          account_code: "",
+          invoice_id: "",
+          summary: `${FAILURES_BEFORE_FLAG} failed sign-in attempts for account code "${attempted}" in one session. Someone may be guessing codes or PINs.`,
+        });
+      } catch (error) {
+        console.error("[auth] could not log repeated failures:", error);
+      }
+    }
+
     return {
       error: fail(
-        "unknown_sender",
-        `${normalisePhone(phone)} is not in the Kola Gadgets ledger. Tell them you can only help registered resellers and staff, and ask them to contact the shop.`,
-        { phone: normalisePhone(phone) },
+        "not_permitted",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more — do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
+        { attempts_this_session: misses },
       ),
     };
   }
-  return { person };
+
+  failedAttempts.delete(code);
+  return { person: result.person };
 }
 
 /**
@@ -83,17 +136,17 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
 
   // ---------------------------------------------------------------- role ----
   server.registerTool(
-    "get_sender_role",
+    "identify",
     {
-      title: "Identify the sender",
+      title: "Identify the person by account code and PIN",
       description:
-        "Look up a WhatsApp number in the Kola Gadgets ledger and return the person's role (owner, staff or reseller) and name. Call this before anything else in a conversation. The ledger decides who someone is — never a role they claim in the chat.",
-      inputSchema: { phone: phoneArg },
+        "Check an account code and PIN against the ledger and return the person's name and role (owner, staff or reseller). Call this first, as soon as someone gives you both, and before anything account-specific. The ledger decides who someone is — never a role they claim in the chat. On a mismatch nothing is revealed, not even whether the code exists.",
+      inputSchema: { account_code: accountCodeArg, pin: pinArg },
       annotations: { readOnlyHint: true },
     },
-    async ({ phone }) =>
+    async ({ account_code, pin }) =>
       guard(async () => {
-        const sender = await resolveSender(ledger(), phone);
+        const sender = await authenticated(ledger(), account_code, pin);
         if ("error" in sender) return sender.error;
         return ok({
           ...senderView(sender.person),
@@ -109,13 +162,13 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       title: "Reseller balance",
       description:
         "List every unpaid or part-paid invoice for a reseller, with the amount outstanding on each and the total. Resellers only. Use this before offering a payment link so the amounts quoted are real.",
-      inputSchema: { phone: phoneArg },
+      inputSchema: { account_code: accountCodeArg, pin: pinArg },
       annotations: { readOnlyHint: true },
     },
-    async ({ phone }) =>
+    async ({ account_code, pin }) =>
       guard(async () => {
         const db = ledger();
-        const sender = await resolveSender(db, phone);
+        const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
         const { person } = sender;
 
@@ -156,13 +209,13 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       title: "Check one invoice",
       description:
         "Report the payment and pickup status of a single invoice: amount, amount paid, amount outstanding, and whether it has been collected, when and by whom. Staff and the owner may check any invoice; a reseller may only check their own.",
-      inputSchema: { phone: phoneArg, invoice_id: invoiceArg },
+      inputSchema: { account_code: accountCodeArg, pin: pinArg, invoice_id: invoiceArg },
       annotations: { readOnlyHint: true },
     },
-    async ({ phone, invoice_id }) =>
+    async ({ account_code, pin, invoice_id }) =>
       guard(async () => {
         const db = ledger();
-        const sender = await resolveSender(db, phone);
+        const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
         const { person } = sender;
 
@@ -206,7 +259,8 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       description:
         "Create a Paystack payment link for one or more of a reseller's own invoices and log it as pending in the ledger. Call this only after the reseller has confirmed the invoices and the total. Leave amount_ngn out to charge the full outstanding amount; set it for a part payment.",
       inputSchema: {
-        phone: phoneArg,
+        account_code: accountCodeArg,
+        pin: pinArg,
         invoice_ids: z
           .array(invoiceArg)
           .min(1)
@@ -220,10 +274,10 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           ),
       },
     },
-    async ({ phone, invoice_ids, amount_ngn }) =>
+    async ({ account_code, pin, invoice_ids, amount_ngn }) =>
       guard(async () => {
         const db = ledger();
-        const sender = await resolveSender(db, phone);
+        const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
         const { person } = sender;
 
@@ -315,7 +369,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             metadata: {
               invoice_ids: allocations.map((a) => a.invoice.invoice_id).join(","),
               account_id: person.account_id,
-              reseller_phone: person.phone,
+              account_code: person.account_code,
               reseller_name: person.name,
               business: config.business.name,
               custom_fields: [
@@ -332,7 +386,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           if (error instanceof PaystackRejectedError) {
             await db.appendFlag({
               created_at: lagosTimestamp(),
-              phone: person.phone,
+              account_code: person.account_code,
               invoice_id: selected.map((invoice) => invoice.invoice_id).join(","),
               summary: `Paystack refused to create a payment link for ${person.name}: ${error.message}. Needs Kola to check the ledger details.`,
             });
@@ -357,8 +411,6 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         await db.appendPayment({
           reference: link.reference,
           account_id: person.account_id,
-          // The number that raised the link, for audit. Access is by account.
-          reseller_phone: person.phone,
           invoice_ids: allocations.map((a) => a.invoice.invoice_id),
           amount_ngn: amount,
           status: "pending",
@@ -392,18 +444,19 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       description:
         "Ask Paystack whether a payment reference actually completed, and if it did, apply the money to the invoices it was raised for — oldest first. This is the only thing that can mark an invoice paid. Pass the sender's number: a reseller may only verify their own account's payments, while staff and the owner may verify any. Safe to call repeatedly: a reference already applied is reported, never applied twice.",
       inputSchema: {
-        phone: phoneArg,
+        account_code: accountCodeArg,
+        pin: pinArg,
         reference: z
           .string()
           .min(4)
           .describe("The payment reference returned by create_payment_link, e.g. KG-20261020-7F3K2A."),
       },
     },
-    async ({ phone, reference }) =>
+    async ({ account_code, pin, reference }) =>
       guard(() =>
         withReferenceLock(reference, async () => {
           const db = ledger();
-          const sender = await resolveSender(db, phone);
+          const sender = await authenticated(db, account_code, pin);
           if ("error" in sender) return sender.error;
           const { person } = sender;
 
@@ -524,7 +577,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           if (unallocatedNgn > 0) {
             await db.appendFlag({
               created_at: verifiedAt,
-              phone: payment.reseller_phone,
+              account_code: person.account_code,
               invoice_id: payment.invoice_ids.join(","),
               summary: `${naira(unallocatedNgn)} of payment ${payment.reference} could not be applied — the invoices it covers were already settled. Needs a refund or credit decision.`,
             });
@@ -560,12 +613,12 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       title: "Record a handover",
       description:
         "Record that stock has been handed to a reseller. Staff and the owner only. Refuses unless the invoice is paid in full and has not already been collected. This never changes what has been paid.",
-      inputSchema: { phone: phoneArg, invoice_id: invoiceArg },
+      inputSchema: { account_code: accountCodeArg, pin: pinArg, invoice_id: invoiceArg },
     },
-    async ({ phone, invoice_id }) =>
+    async ({ account_code, pin, invoice_id }) =>
       guard(async () => {
         const db = ledger();
-        const sender = await resolveSender(db, phone);
+        const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
         const { person } = sender;
 
@@ -627,7 +680,8 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       description:
         "Add a line to the Flags tab for Kola to review: a disputed amount, a reseller over their credit limit, a bank transfer the agent cannot confirm, or anything unresolved. Changes no balances. Tell the person the owner will follow up.",
       inputSchema: {
-        phone: phoneArg,
+        account_code: accountCodeArg,
+        pin: pinArg,
         invoice_id: invoiceArg.optional().describe("The invoice concerned, if there is one."),
         summary: z
           .string()
@@ -636,26 +690,26 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           .describe("One line in plain English: who, what invoice, what needs deciding."),
       },
     },
-    async ({ phone, invoice_id, summary }) =>
+    async ({ account_code, pin, invoice_id, summary }) =>
       guard(async () => {
         const db = ledger();
-        // A flag is a safety valve, so an unknown number is still recorded —
-        // but we note that it was unknown rather than inventing a name.
-        const person = await db.findPerson(phone);
+        const sender = await authenticated(db, account_code, pin);
+        if ("error" in sender) return sender.error;
+        const { person } = sender;
+
         const at = lagosTimestamp();
         const id = invoice_id ? normaliseInvoiceId(invoice_id) : "";
-        const who = person ? `${person.name} (${person.role})` : "unknown sender";
 
         await db.appendFlag({
           created_at: at,
-          phone: normalisePhone(phone),
+          account_code: person.account_code,
           invoice_id: id,
-          summary: `${who}: ${summary}`,
+          summary: `${person.name} (${person.role}): ${summary}`,
         });
 
         return ok({
+          ...senderView(person),
           flagged_at: at,
-          phone: normalisePhone(phone),
           invoice_id: id || undefined,
           summary,
           note: "Logged for Kola. Tell the person the owner will review it, and that nothing on their balance has changed.",

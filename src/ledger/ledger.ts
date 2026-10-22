@@ -1,6 +1,7 @@
-import { normalisePhone } from "../lib/format.js";
+import { timingSafeEqual } from "node:crypto";
+import { normaliseAccountCode, normalisePhone, normalisePin } from "../lib/format.js";
 import { cell, optionalCell, type TableStore } from "./store.js";
-import type { Flag, Invoice, Ledger, Payment, PaymentStatus, Person, Role } from "./types.js";
+import type { AuthResult, Flag, Invoice, Ledger, Payment, PaymentStatus, Role } from "./types.js";
 
 /**
  * The sheet is typed by a human, so amounts may arrive as "2,400,000" or even
@@ -29,6 +30,17 @@ function parsePaymentStatus(value: string): PaymentStatus {
   return "pending";
 }
 
+/**
+ * Constant-time PIN comparison. A 4-digit PIN is small enough that timing
+ * leaks are not the real risk here, but there is no reason to hand one over.
+ */
+function pinsMatch(stored: string, given: string): boolean {
+  const a = Buffer.from(stored);
+  const b = Buffer.from(given);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 /** Oldest first, by pickup date then invoice id — the part-payment rule. */
 export function byOldestFirst(a: Invoice, b: Invoice): number {
   const dates = a.created_at.localeCompare(b.created_at);
@@ -42,40 +54,46 @@ export class TableLedger implements Ledger {
     return this.store.backend;
   }
 
-  async findPerson(phone: string): Promise<Person | undefined> {
-    const wanted = normalisePhone(phone);
-    if (wanted === "") return undefined;
+  /**
+   * Account code plus PIN, checked together. Returns the person or a reason,
+   * and never the PIN — there is no getter for it anywhere in the codebase.
+   */
+  async authenticate(accountCode: string, pin: string): Promise<AuthResult> {
+    const wantedCode = normaliseAccountCode(accountCode);
+    const wantedPin = normalisePin(pin);
+    if (wantedCode === "" || wantedPin === "") return { ok: false, reason: "unknown_code" };
+
     const { header, rows } = await this.store.readTable("People");
     for (const row of rows) {
-      if (normalisePhone(cell(row, header, "phone")) !== wanted) continue;
+      if (normaliseAccountCode(cell(row, header, "account_code")) !== wantedCode) continue;
+
       const role = parseRole(cell(row, header, "role"));
       if (!role) continue; // a typo in the role column must not grant access
 
-      // A row with no account_id gets one of its own, derived from the phone.
-      // That way a missing or mistyped cell isolates that number rather than
-      // lumping it in with someone else's invoices.
-      const account = optionalCell(row, header, "account_id");
-      const accountId = account !== "" ? account.toUpperCase() : `ACC-${wanted}`;
-
-      // A second row on an account may leave name or email blank. Paystack
-      // needs an email, so fall back to another row on the same account.
-      let name = cell(row, header, "name");
-      let email = cell(row, header, "email");
-      if (name === "" || email === "") {
-        const sibling = rows.find(
-          (candidate) =>
-            optionalCell(candidate, header, "account_id").toUpperCase() === accountId &&
-            normalisePhone(cell(candidate, header, "phone")) !== wanted,
-        );
-        if (sibling) {
-          if (name === "") name = cell(sibling, header, "name");
-          if (email === "") email = cell(sibling, header, "email");
-        }
+      const storedPin = normalisePin(cell(row, header, "pin"));
+      // A blank PIN cell must never mean "no PIN required".
+      if (storedPin === "" || !pinsMatch(storedPin, wantedPin)) {
+        return { ok: false, reason: "bad_pin" };
       }
 
-      return { phone: wanted, name, role, email, account_id: accountId };
+      const account = optionalCell(row, header, "account_id");
+      return {
+        ok: true,
+        person: {
+          // The code as Kola wrote it ("KG-ADA"), not the squashed form we
+          // compare on ("KGADA") — this is what the agent says out loud.
+          account_code: cell(row, header, "account_code").trim().toUpperCase(),
+          name: cell(row, header, "name"),
+          role,
+          email: cell(row, header, "email"),
+          // Fall back to the code so a blank account_id cannot silently
+          // match every other blank-account row in the sheet.
+          account_id: (account !== "" ? account : `ACC-${wantedCode}`).toUpperCase(),
+          phone: normalisePhone(optionalCell(row, header, "phone")),
+        },
+      };
     }
-    return undefined;
+    return { ok: false, reason: "unknown_code" };
   }
 
   async listInvoices(): Promise<Invoice[]> {
@@ -132,7 +150,6 @@ export class TableLedger implements Ledger {
       return {
         reference: cell(row, header, "reference"),
         account_id: optionalCell(row, header, "account_id").toUpperCase(),
-        reseller_phone: normalisePhone(cell(row, header, "reseller_phone")),
         invoice_ids: splitInvoiceIds(cell(row, header, "invoice_ids")),
         amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
         status: parsePaymentStatus(cell(row, header, "status")),
@@ -148,7 +165,6 @@ export class TableLedger implements Ledger {
     await this.store.appendRow("Payments", [
       payment.reference,
       payment.account_id,
-      payment.reseller_phone,
       payment.invoice_ids.join(","),
       String(Math.round(payment.amount_ngn)),
       payment.status,
@@ -178,7 +194,7 @@ export class TableLedger implements Ledger {
   async appendFlag(flag: Flag): Promise<void> {
     await this.store.appendRow("Flags", [
       flag.created_at,
-      flag.phone,
+      flag.account_code,
       flag.invoice_id,
       flag.summary,
     ]);

@@ -39,9 +39,22 @@ export function lagosDate(date = new Date()): string {
 }
 
 /**
- * Normalise every phone number to E.164 Nigeria (+234...) before comparing.
- * We do not know yet what shape Chord hands us the sender's number in, so we
- * accept 0802…, 802…, 234802…, +234 802…, and whitespace or dashes anywhere.
+ * Account codes are typed by hand on a phone keyboard, so "kg ada",
+ * "KG-ADA" and "kgada" must all mean the same account. Compare on letters
+ * and digits only.
+ */
+export function normaliseAccountCode(input: string): string {
+  return (input ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** PINs arrive as "4461" or "4 4 6 1". Keep the digits. */
+export function normalisePin(input: string): string {
+  return (input ?? "").replace(/\D/g, "");
+}
+
+/**
+ * Normalise a phone number to E.164 Nigeria (+234...). Phones are contact
+ * details for Kola now, not identity — Chord never tells us who is calling.
  */
 export function normalisePhone(input: string): string {
   const digits = (input ?? "").replace(/[^\d+]/g, "").replace(/^\+/, "");

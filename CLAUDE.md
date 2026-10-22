@@ -13,13 +13,14 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | When | What |
 | --- | --- |
 | 19 Oct | Brief received from Emmanuel (support@tsglabs.com) |
-| 20 Oct | Sent questions on sender identity and the built-in Paystack connector — **awaiting reply** |
-| 20–21 Oct | Account setup and building outside Chord |
-| 22–25 Oct | Marvin travelling (speaking at DevFest Akure) — drafting writing only |
-| Mon 26 Oct | Send Chord account email → credits arrive → **5-day clock starts** |
-| ~31 Oct | Submit |
+| 20 Oct | Sent questions on sender identity and the built-in Paystack connector |
+| 20–21 Oct | Account setup and building outside Chord; Paystack and the Google Sheet wired up and proven |
+| **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
+| **22 Oct** | **Credits added — the 5-day clock is running** |
+| 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
+| ~27 Oct | Submit |
 
-Nothing that needs Chord credits should happen before 26 Oct. Everything else should.
+The clock started on 22 Oct, not 26 Oct — the credits arrived early.
 
 ## The problem
 
@@ -31,11 +32,11 @@ This is a real problem Marvin has lived as a reseller. Keep that story at the ce
 
 ## Design decisions (already agreed)
 
-- **Three roles, identified by phone number from the ledger, never by what someone claims.** A reseller may have a second number linked to their first in the People tab; everything else about identity follows from the ledger:
+- **Three roles, proven by an account code and a 4-digit PIN, never by what someone claims.** Chord gives us nothing about the sender, so the agent asks and the server checks on every call:
   - Reseller — see and pay their own invoices only.
   - Staff — check any invoice's payment status, record a handover. **Can never mark anything paid.**
   - Owner — everything, through the Google Sheet.
-- **People have accounts; accounts have phones.** Resellers often message from more than one number — a real complaint from suppliers, who lose track of one conversation split across two chats. Invoices belong to a reseller **account**, not a phone, so either number sees the same balance and invoices. The ledger, not the chat, is the record: WhatsApp keeps separate threads per number, and that's fine. **Only the owner links a number**, by adding a row in the Sheet. The agent never accepts "this is my new number" from chat — an unknown number claiming to be an existing reseller gets no account details and is flagged for the owner.
+- **Identity is proven, not inferred.** Chord tells the agent nothing about who is messaging (confirmed 22 Oct), so everyone has an account code Kola issued plus a 4-digit PIN, and both go to every tool on every call. A happy side effect of losing phone identity: a reseller can message from any phone and still see their own balance, which is what suppliers actually wanted. Only Kola can issue or reset a code — the agent never accepts "it's me, I've lost my PIN".
 - **Only a verified Paystack payment marks an invoice paid.** Screenshots and "I've paid" are not proof.
 - **Payment-intent recognition is the centrepiece.** "acct dets", "account number", "where do I send the money?" → intercept with a payment link instead of bank details. Context decides, not keywords ("I sent it to your account" is a payment claim, not a request). Details in the skill.
 - **Automatic with the reseller's confirmation.** The agent confirms invoices and total, sends the link on "yes". Owner approval only for exceptions (disputes, over credit limit, insists on bank transfer).
@@ -58,7 +59,7 @@ WhatsApp simulator → Chord teammate (skill) → our MCP server → Google Shee
 - `enabled_tools` restricts tools by exact name; empty means all.
 - **Health probe returns HTTP 200 even when it fails** — read `status`, not the HTTP code.
 - **Built-in connector tool types:** `bookings`, `menu`, `paystack`, `notion`, `linear`, `github`. The built-in Paystack connector doesn't count as our custom tool; what it can do is undocumented (asked TSG).
-- **Unknown:** whether the sender's phone number reaches the agent or MCP tools, and whether the simulator can send as multiple numbers. **This decides the role design.** Asked TSG on 20 Oct.
+- **Answered 22 Oct:** Chord does **not** pass the sender's phone number to the teammate or its MCP tools, and the WhatsApp simulator has one profile per agent. There is no sender identity at all, so roles cannot be inferred — they have to be proven in the chat. See "Identity" below.
 
 ## MCP server — built
 
@@ -69,7 +70,7 @@ src/
   index.ts            express app — bearer auth, /health, stateless /mcp
   server.ts           MCP server factory
   config.ts           env loading, startup config checks
-  lib/format.ts       naira, kobo, Lagos timestamps, phone normalisation
+  lib/format.ts       naira, kobo, Lagos timestamps, account-code/PIN/phone normalisation
   ledger/             People/Invoices/Payments/Flags behind one interface
     store.ts          the narrow TableStore both backends implement
     sheets-store.ts   Google Sheets via service-account JWT
@@ -84,7 +85,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 | Command | Does |
 | --- | --- |
 | `npm run dev` | Local server on :3000, hot reload |
-| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 86 assertions |
+| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 91 assertions |
 | `npm run typecheck` | `tsconfig.json` (src + scripts) |
 | `npm run build` / `start` | `tsconfig.build.json` → `dist/index.js` (src only, so output isn't nested) |
 | `npm run setup:sheet` | Creates and seeds the ledger tabs; `--force` to replace |
@@ -97,34 +98,35 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 - **`enableJsonResponse: true` on the transport.** The SDK defaults to SSE; nothing here streams, and JSON is readable with curl. Chord accepts either. Logged in field notes.
 - **Only `verify_payment` writes `amount_paid_ngn`.** No other code path touches it — the "staff can never mark anything paid" rule is structural, not prompt-level.
 - **Double-apply guarded twice:** the Payments row reading `success` with a timestamp short-circuits a repeat verify, and a per-reference in-process lock serialises concurrent calls. Single instance only — scaling out would need the lock in the sheet or a real queue.
-- **Phone numbers normalised to `+234…`** on every comparison, since we still don't know what shape Chord sends.
-- **Resellers can have two numbers**, via `account_id`. Found this gap because the go-live note promised it and the code compared phone numbers. First pass used a `primary_phone` pointer; replaced with the agreed account model, which is cleaner and puts the identity in one column.
+- **Account codes normalised on letters and digits**, so "kg ada", "KG-ADA" and "kgada" all match. PINs normalised on digits, so "4 4 6 1" works. The canonical code the agent says out loud is the one Kola wrote in the sheet, not the squashed comparison key — the smoke test caught the agent calling her account "KGADA".
+- **The PIN never leaves the ledger layer.** `Ledger.authenticate(code, pin)` compares it internally and returns the person or a reason; there is no getter for a PIN anywhere, and `senderView` carries neither PIN nor phone. Anything the model can see, it can repeat into the chat.
 - **Invoice ids normalised on the digits**, so "104", "inv 104" and "INV-104" all resolve.
 
-### Accounts, not phone numbers (agreed 20 Oct — built)
+### Identity: account code + PIN (rebuilt 22 Oct — built)
 
-Ownership is compared on `account_id`, never on a phone number, so one reseller can carry two phones.
+TSG confirmed Chord passes **no sender identity at all** to a teammate or its MCP tools, and the simulator has one profile per agent. Phone-based roles were therefore impossible. Identity is now proven in the chat.
 
-- **People tab** has `account_id` (e.g. `ACC-ADA`). One row per phone; several rows share an account. A row with a blank `account_id` gets `ACC-<phone>` of its own, so a mistyped cell isolates that number instead of lumping it in with someone else's invoices.
-- **Invoices tab** uses `account_id` in place of `reseller_phone`.
-- **Payments tab** has `account_id`, and keeps `reseller_phone` as the number that raised the link — audit only, never access.
-- **`get_sender_role` returns `account_id`.** A second row may leave name or email blank; both fall back to another row on the same account, since Paystack needs an email.
-- **`verify_payment` takes the sender's `phone`** and refuses a reference from another account. Without that, a reference acted as a bearer token for anyone holding it.
-- **Seed data:** Ada has `+2348020000011` on `ACC-ADA`. `+2349999999999` is deliberately left out, for testing the "I'm Ada, new number" flow.
-- **Skill:** the unknown-number rule is in SKILL.md under "Who you are talking to", with examples in `references/examples.md` and the account rules in `references/business.md`.
-- **Tested:** the second line sees the same balance, a link raised on one number is verified from the other, another reseller is refused the reference, and staff can verify any payment.
+- **People tab** holds `account_code` (e.g. `KG-ADA`) and a 4-digit `pin`, both issued by Kola. `phone` stays as a contact detail for him to ring people — never as identity.
+- **Every tool takes `account_code` + `pin`** and re-checks them. There is no session and nothing is cached between calls: Chord gives us no stable handle to key a session on, so re-checking is the only honest option.
+- **`identify` replaces `get_sender_role`.** Same job, different question — not "who is this number?" but "what can this person prove?"
+- **A mismatch is one message, always the same one.** Unknown code and wrong PIN are deliberately indistinguishable; otherwise the agent becomes a way to enumerate which account codes are live. Asserted in the smoke test by comparing the two messages.
+- **Five failed attempts on one code flags the owner**, but never locks the account — a lockout would let anyone freeze a reseller out just before a pickup. The flag records the code *as typed*, so Kola can tell a typo from an attack. In-process counter, so it resets on deploy.
+- **`account_id` stays the ledger key** for Invoices and Payments, one-to-one with `account_code`. Slightly redundant, kept so the Invoices and Payments tabs never carry a credential. Worth collapsing into one column if it ever causes confusion.
+- **Dropped as meaningless:** `Payments.reseller_phone` and `Flags.phone`. Flags now records `account_code`.
+- **No live credential appears in the skill.** Caught this on review: the first draft of `examples.md` showed "KG-ADA 4461", and the skill is uploaded to Chord — so the model would have been carrying a working code and PIN it could be talked into handing over. Examples now write PINs as "4 digits", and `business.md` deliberately does not list the account codes.
+- **Tested:** wrong PIN refused on every tool, identical message for unknown code and bad PIN, no PIN in any tool output or ledger row, spacing and case ignored, five misses flagged, and the account still usable afterwards.
 
 ### Tools (names must match the skill)
 
 | Tool | Input | Does |
 | --- | --- | --- |
-| `get_sender_role` | `phone` | Look up People → `owner` / `staff` / `reseller` / `unknown`, plus name |
-| `get_reseller_balance` | `phone` | Unpaid and part-paid invoices for that reseller, with outstanding amounts and total |
-| `check_invoice_status` | `phone`, `invoice_id` | Status, amount paid/outstanding, collected/when/by whom. Resellers only see their own |
-| `create_payment_link` | `phone`, `invoice_ids[]`, `amount_ngn?` | Resellers only. Validate invoices belong to them and amount ≤ outstanding (≥ ₦50,000 if part); call Paystack initialize with our own reference and invoice IDs in metadata; log the pending row **after** Paystack returns a link; return link + reference |
-| `verify_payment` | `phone`, `reference` | Only references we issued — an unknown one returns `not_found` — and only for the sender's own account unless they are staff or the owner. Call Paystack verify. On `success`, apply to invoices (oldest first) **once** — reports the existing confirmation if already applied. Any unallocatable remainder is flagged for the owner |
-| `record_handover` | `phone`, `invoice_id` | Staff and owner. Refuse unless fully paid and not collected — `already_collected` takes precedence over `not_fully_paid`, because "you already gave this away" is the more urgent warning. Set collected, time, staff name |
-| `flag_for_owner` | `phone`, `invoice_id?`, `summary` | Append to Flags tab |
+| `identify` | `account_code`, `pin` | Check the credentials against People → `owner` / `staff` / `reseller`, plus name and `account_id`. A mismatch returns `not_permitted` and reveals nothing, not even whether the code exists |
+| `get_reseller_balance` | `account_code`, `pin` | Unpaid and part-paid invoices for that reseller, with outstanding amounts and total |
+| `check_invoice_status` | `account_code`, `pin`, `invoice_id` | Status, amount paid/outstanding, collected/when/by whom. Resellers only see their own |
+| `create_payment_link` | `account_code`, `pin`, `invoice_ids[]`, `amount_ngn?` | Resellers only. Validate invoices belong to them and amount ≤ outstanding (≥ ₦50,000 if part); call Paystack initialize with our own reference and invoice IDs in metadata; log the pending row **after** Paystack returns a link; return link + reference |
+| `verify_payment` | `account_code`, `pin`, `reference` | Only references we issued — an unknown one returns `not_found` — and only for the sender's own account unless they are staff or the owner. Call Paystack verify. On `success`, apply to invoices (oldest first) **once** — reports the existing confirmation if already applied. Any unallocatable remainder is flagged for the owner |
+| `record_handover` | `account_code`, `pin`, `invoice_id` | Staff and owner. Refuse unless fully paid and not collected — `already_collected` takes precedence over `not_fully_paid`, because "you already gave this away" is the more urgent warning. Set collected, time, staff name |
+| `flag_for_owner` | `account_code`, `pin`, `invoice_id?`, `summary` | Append to Flags tab. Needs valid credentials like everything else, so an unidentified person can no longer be flagged — tell them to contact the shop instead |
 
 Every tool returns plain, model-readable JSON, and clear errors (`not_found`, `not_permitted`, `paystack_unreachable`…) rather than throwing — the skill tells the agent how to word each failure.
 
@@ -149,14 +151,14 @@ Seed data in `data/*.csv`. `npm run setup:sheet` creates the four tabs and fills
 
 Tabs:
 
-- **People:** phone, name, role, email, account_id
+- **People:** account_code, pin, name, role, email, account_id, phone (contact only — never identity)
 - **Invoices:** invoice_id, account_id, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
-- **Payments:** reference, account_id, reseller_phone, invoice_ids, amount_ngn, status, link, created_at, verified_at
-- **Flags:** created_at, phone, invoice_id, summary
+- **Payments:** reference, account_id, invoice_ids, amount_ngn, status, link, created_at, verified_at
+- **Flags:** created_at, account_code, invoice_id, summary
 
 Status is derived, not stored: paid = amount_paid ≥ amount.
 
-Ownership is by account — see "Accounts, not phone numbers" above.
+Ownership is by account — see "Identity: account code + PIN" above. Codes and PINs are the only credentials in the system, so the Sheet is as sensitive as a password file: keep it private to Kola and the service account.
 
 ### Hosting
 
@@ -189,18 +191,19 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Skill drafted (`skill/kola-gadgets-payments/`)
 - [x] Seed ledger data (`data/`)
 - [x] Paystack test account + secret key — in `.env` (never committed), `PAYSTACK_MODE=live`
-- [x] Google Cloud project, Sheets API, service account key; Sheet "kolagadgets" created and shared — verified 21 Oct end to end on `LEDGER_BACKEND=sheets`: `/health` ok, both of Ada's numbers resolve to ACC-ADA, a real Paystack link wrote a pending row, verify applied ₦310,000 to INV-109 and marked it paid, a repeat verify did not re-apply, staff release wrote collected/by/at. Sheet reset to seed data afterwards with `setup:sheet -- --force`
+- [x] Google Cloud project, Sheets API, service account key; Sheet "kolagadgets" created and shared — verified 21 Oct end to end on `LEDGER_BACKEND=sheets`: `/health` ok, a real Paystack link wrote a pending row, verify applied ₦310,000 to INV-109 and marked it paid, a repeat verify did not re-apply, staff release wrote collected/by/at. Sheet reset to seed data afterwards with `setup:sheet -- --force`
 - [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
-- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 86 assertions
+- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 91 assertions
 - [x] README drafted (`README.md`) — how to run, the seven tools, how AI tools were used
 - [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
-- [x] Multiple phones per reseller account — `account_id` on People, Invoices and Payments; see "Accounts, not phone numbers"
-- [x] `verify_payment` takes the sender's `phone` and refuses a reference from another account; staff and the owner may verify any
+- [x] Multiple phones per reseller account — solved outright by dropping phone identity on 22 Oct; a code works from any device
+- [x] `verify_payment` refuses a reference from another account; staff and the owner may verify any
+- [x] **Identity rebuilt on account code + PIN (22 Oct)** after TSG confirmed Chord passes no sender identity: `identify` replaces `get_sender_role`, all seven tools take `account_code` + `pin` and re-check on every call, PIN never echoed, five misses flag the owner. Skill, seed data, smoke tests and field notes updated
 - [x] Real Paystack test mode proven end to end (20 Oct): tool created a live `checkout.paystack.com` link for ₦2,710,000; a test-card charge then verified, applied to INV-109, marked it paid and safe to release; a second verify reported the existing payment without re-applying; another reseller was refused the reference; staff release worked and refused twice. Two real bugs found and fixed — see field notes
-- [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note now tells Kola how to link a second number
+- [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note covers issuing codes and PINs
 - [ ] Rehearse one unbroken click-through on real Paystack test mode: create the link → open it in a browser → pay with the test card → "paid" → `verify_payment` → Sheet updates (see `docs/live-session.md`, "Recording run")
-- [ ] 26 Oct: send Chord email
+- [x] Chord account email sent; credits added 22 Oct
 - [ ] Register MCP server, upload skill, test every path in the simulator
 - [ ] Record, finish field notes, submit
 

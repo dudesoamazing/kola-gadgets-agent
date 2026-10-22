@@ -67,11 +67,12 @@ export function allocateOldestFirst(
 
 /** Who the sender is, phrased the way the skill expects it. */
 export function senderView(person: Person) {
+  // Deliberately no PIN and no phone number. The PIN must never reach the
+  // model, because anything the model sees it can repeat into the chat.
   return {
     name: person.name,
     role: person.role,
-    phone: person.phone,
-    // The agent needs this to understand that two numbers can be one reseller.
+    account_code: person.account_code,
     account_id: person.account_id,
   };
 }

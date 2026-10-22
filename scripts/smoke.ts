@@ -149,12 +149,13 @@ async function main(): Promise<void> {
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
     check(
-      "all seven tools are exposed",
+      "all eight tools are exposed",
       JSON.stringify(names) ===
         JSON.stringify([
           "check_invoice_status",
           "create_payment_link",
           "flag_for_owner",
+          "get_pickup_codes",
           "get_reseller_balance",
           "identify",
           "record_handover",
@@ -262,15 +263,19 @@ async function main(): Promise<void> {
     const missing = await call("check_invoice_status", { ...ADA, invoice_id: "INV-999" });
     check("a missing invoice is not_found", missing.error === "not_found", missing);
 
-    // Checked here, while INV-112 is still part-paid and INV-109 still unpaid.
-    const releasePartPaid = await call("record_handover", { ...STAFF, invoice_id: "INV-112" });
+    // A part-paid invoice has no pickup code at all, so there is nothing for
+    // staff to type — the refusal happens one step earlier than before.
+    const staffSeesCode = await call("check_invoice_status", { ...STAFF, invoice_id: "INV-110" });
     check(
-      "staff cannot release a part-paid invoice",
-      releasePartPaid.error === "not_fully_paid",
-      releasePartPaid,
+      "check_invoice_status never shows staff a pickup code",
+      staffSeesCode.invoice?.pickup_code === undefined &&
+        !JSON.stringify(staffSeesCode).includes("418637"),
+      staffSeesCode,
     );
-    const releaseUnpaid = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
-    check("staff cannot release an unpaid invoice", releaseUnpaid.error === "not_fully_paid", releaseUnpaid);
+
+    const staffCodes = await call("get_pickup_codes", { ...STAFF });
+    check("staff cannot list pickup codes", staffCodes.error === "not_permitted", staffCodes);
+    check("and no code leaks in the refusal", !JSON.stringify(staffCodes).includes("418637"), staffCodes);
 
     // ------------------------------------------------------- payment link ---
     section("Payment link");
@@ -417,6 +422,18 @@ async function main(): Promise<void> {
       partApplied.applied_to?.[0]?.safe_to_release === false,
       partApplied.applied_to,
     );
+    // The mechanic in one line: a part payment mints no pickup code, so there
+    // is nothing the reseller can show at the counter.
+    check(
+      "a part payment issues no pickup code",
+      partApplied.applied_to?.[0]?.pickup_code === undefined,
+      partApplied.applied_to,
+    );
+    const partRow = fs
+      .readFileSync(path.join(dir, "invoices.csv"), "utf8")
+      .split("\n")
+      .find((line) => line.startsWith("INV-107"));
+    check("and the pickup_code cell stays empty", partRow?.startsWith("INV-107,ACC-ADA,,") === true, partRow);
 
     // ------------------------------------------------------ failed payment --
     section("Failed payment");
@@ -441,27 +458,107 @@ async function main(): Promise<void> {
       stillOwed.invoice?.outstanding_ngn,
     );
 
-    // ----------------------------------------------------------- handover ---
-    section("Handover");
-    const resellerRelease = await call("record_handover", { ...ADA, invoice_id: "INV-109" });
-    check("a reseller cannot record a handover", resellerRelease.error === "not_permitted", resellerRelease);
-
-    // INV-107 is part-paid *and* was taken on credit. "You already handed this
-    // over" is the more urgent warning, so it must win over "not fully paid".
-    const creditRelease = await call("record_handover", { ...STAFF, invoice_id: "INV-107" });
+    // ------------------------------------------------------- pickup codes ---
+    section("Pickup codes");
+    // INV-109 was settled in full earlier in this run, so verify_payment
+    // should have minted it a code.
+    const adaCodes = await call("get_pickup_codes", { ...ADA });
+    const inv109 = (adaCodes.ready_to_collect ?? []).find((i: Json) => i.invoice_id === "INV-109");
+    check("a settled invoice has a pickup code", /^\d{6}$/.test(String(inv109?.pickup_code)), adaCodes);
     check(
-      "an already-collected invoice warns about that first",
-      creditRelease.error === "already_collected",
-      creditRelease,
+      "the part-paid INV-107 is not listed as ready",
+      !(adaCodes.ready_to_collect ?? []).some((i: Json) => i.invoice_id === "INV-107"),
+      adaCodes.ready_to_collect,
+    );
+    const adaCode = String(inv109?.pickup_code);
+
+    // INV-112 was settled in full by the concurrent-verify test earlier, so it
+    // has a code now too — and every issued code must be distinct.
+    const emekaCodes = await call("get_pickup_codes", { ...EMEKA });
+    const inv112 = (emekaCodes.ready_to_collect ?? []).find((i: Json) => i.invoice_id === "INV-112");
+    check("INV-112 got its own code once it was settled", /^\d{6}$/.test(String(inv112?.pickup_code)), emekaCodes);
+    check("no two invoices share a code", inv112?.pickup_code !== inv109?.pickup_code, {
+      inv112: inv112?.pickup_code,
+      inv109: inv109?.pickup_code,
+    });
+    check(
+      "a reseller sees only their own codes",
+      (emekaCodes.ready_to_collect ?? []).every((i: Json) => i.invoice_id !== "INV-109"),
+      emekaCodes.ready_to_collect,
     );
 
-    const release = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
-    check("staff release a paid invoice", release.ok === true, release);
-    check("it records Tunde", release.collected_by === "Tunde", release.collected_by);
-    check("and a Lagos timestamp", /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(release.collected_at)), release.collected_at);
+    // Verifying again must not mint a second code for the same goods.
+    await call("verify_payment", { ...ADA, reference });
+    const codesAgain = await call("get_pickup_codes", { ...ADA });
+    const inv109Again = (codesAgain.ready_to_collect ?? []).find((i: Json) => i.invoice_id === "INV-109");
+    check(
+      "verifying twice does not reissue a different code",
+      inv109Again?.pickup_code === adaCode,
+      { first: adaCode, second: inv109Again?.pickup_code },
+    );
 
-    const twice = await call("record_handover", { ...STAFF, invoice_id: "INV-109" });
-    check("releasing twice is refused", twice.error === "already_collected", twice);
+    // ----------------------------------------------------------- handover ---
+    section("Handover against a code");
+    const resellerRelease = await call("record_handover", { ...ADA, pickup_code: adaCode });
+    check("a reseller cannot release goods", resellerRelease.error === "not_permitted", resellerRelease);
+
+    const seededRelease = await call("record_handover", { ...STAFF, pickup_code: "418 637" });
+    check("the seeded code for INV-110 works, spaces and all", seededRelease.ok === true, seededRelease);
+    check(
+      "it names the item to hand over",
+      String(seededRelease.items).includes("Galaxy S24"),
+      seededRelease.items,
+    );
+    check("it records Tunde", seededRelease.collected_by === "Tunde", seededRelease.collected_by);
+    check(
+      "and a Lagos timestamp",
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(seededRelease.collected_at)),
+      seededRelease.collected_at,
+    );
+
+    const reused = await call("record_handover", { ...STAFF, pickup_code: "418637" });
+    check("a code works exactly once", reused.error === "already_collected", reused);
+
+    const release = await call("record_handover", { ...STAFF, pickup_code: adaCode });
+    check("Ada's code releases INV-109", release.ok === true && release.invoice_id === "INV-109", release);
+
+    const spentCode = await call("get_pickup_codes", { ...ADA });
+    check(
+      "a collected invoice drops off the ready-to-collect list",
+      !(spentCode.ready_to_collect ?? []).some((i: Json) => i.invoice_id === "INV-109"),
+      spentCode.ready_to_collect,
+    );
+
+    // ------------------------------------------------------ wrong codes ----
+    section("Wrong pickup codes lock the counter");
+    const bisi = { account_code: "KG-BISI", pin: "3318" };
+    const firstWrong = await call("record_handover", { ...bisi, pickup_code: "000001" });
+    check("a wrong code releases nothing", firstWrong.error === "not_found", firstWrong);
+    check("and says how many attempts are left", /attempt/i.test(String(firstWrong.message)), firstWrong.message);
+    check("no invoice leaks on a wrong code", firstWrong.invoice === undefined, firstWrong);
+
+    await call("record_handover", { ...bisi, pickup_code: "000002" });
+    const thirdWrong = await call("record_handover", { ...bisi, pickup_code: "000003" });
+    check("the third wrong code locks the account", thirdWrong.locked === true, thirdWrong);
+
+    const lockedOut = await call("record_handover", { ...bisi, pickup_code: "418637" });
+    check(
+      "a locked account cannot release even with a real code",
+      lockedOut.error === "not_permitted" && lockedOut.locked === true,
+      lockedOut,
+    );
+
+    const lockFlags = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
+    check("the lockout is flagged for the owner", lockFlags.includes("wrong pickup codes"), lockFlags);
+    check("and names the staff member", lockFlags.includes("KG-BISI"), lockFlags);
+
+    // Tunde is unaffected — one staff account locking must not shut the shop.
+    const tundeStillOk = await call("record_handover", { ...STAFF, pickup_code: "000009" });
+    check(
+      "another staff account is not locked out",
+      tundeStillOk.error === "not_found" && tundeStillOk.locked === false,
+      tundeStillOk,
+    );
 
     // --------------------------------------------------------------- flag ---
     section("Flag for the owner");

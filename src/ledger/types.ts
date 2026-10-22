@@ -34,6 +34,14 @@ export interface Invoice {
   invoice_id: string;
   /** The reseller account that owes this, e.g. "ACC-ADA". */
   account_id: string;
+  /**
+   * Six digits the reseller shows at the counter. Issued only when a
+   * verified payment settles the invoice in full, and spent the moment staff
+   * use it. Blank until then — and never shown to staff by any tool.
+   *
+   * This is how Computer Village already works: no code, no goods.
+   */
+  pickup_code: string;
   items: string;
   amount_ngn: number;
   amount_paid_ngn: number;
@@ -96,6 +104,8 @@ export interface Ledger {
   listInvoices(): Promise<Invoice[]>;
   listInvoicesForAccount(accountId: string): Promise<Invoice[]>;
   findInvoice(invoiceId: string): Promise<Invoice | undefined>;
+  /** Look an invoice up by the code the reseller read out. */
+  findInvoiceByPickupCode(pickupCode: string): Promise<Invoice | undefined>;
   /** Patch a single invoice row. Only the named fields are written. */
   updateInvoice(invoiceId: string, patch: Partial<Invoice>): Promise<void>;
 

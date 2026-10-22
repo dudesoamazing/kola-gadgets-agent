@@ -17,7 +17,7 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | Deployment field notes | [`docs/field-notes.md`](docs/field-notes.md) |
 | Go-live note for the owner | [`docs/go-live-note.md`](docs/go-live-note.md) |
 
-## The seven tools
+## The eight tools
 
 | Tool | Who can use it | What it does |
 | --- | --- | --- |
@@ -26,7 +26,8 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | `check_invoice_status` | staff, owner, and the reseller it belongs to | Amount, amount paid, outstanding, collected when and by whom |
 | `create_payment_link` | reseller | Validates the invoices are theirs, creates a Paystack link, logs it as pending |
 | `verify_payment` | the account it belongs to, plus staff and owner | Asks Paystack what really happened and applies the money, oldest invoice first |
-| `record_handover` | staff, owner | Marks stock handed over — refuses unless the invoice is paid in full |
+| `get_pickup_codes` | reseller | Their paid, uncollected invoices with each 6-digit pickup code |
+| `record_handover` | staff, owner | Releases goods against a pickup code — names the item, marks it collected, spends the code |
 | `flag_for_owner` | anyone | Adds a line to the Flags tab for Kola to look at |
 
 Three rules the code enforces, not just the prompt:
@@ -34,6 +35,7 @@ Three rules the code enforces, not just the prompt:
 - **Only `verify_payment` can mark an invoice paid.** Nothing else writes `amount_paid_ngn`. No one can talk their way into it — not staff, not someone claiming to be staff.
 - **Verifying the same reference twice never applies the money twice.** The payment row is the record; once it reads `success` with a timestamp, a repeat call reports the existing confirmation instead. Simultaneous calls are serialised per reference.
 - **Roles come from the ledger's People tab.** Never from what someone says in the chat.
+- **No code, no goods.** A verified payment that clears an invoice in full mints a unique 6-digit pickup code; staff release only against it. **No tool ever shows a code to staff** — `invoiceView` has no such field, and `get_pickup_codes` returns one only to the reseller who paid. Three wrong codes lock handovers from that staff account and flag the owner. Copied from how Computer Village already works, so nobody at the counter has to be retrained.
 - **Identity is proven, not inferred.** Chord passes no sender identity to a teammate or its tools — no phone number, nothing (confirmed by TSG, 22 Oct). So every person has an owner-issued account code and a 4-digit PIN, and **every tool re-checks both on every call**; there is no session, because there is no handle to key one on. An unknown code and a wrong PIN return the same message, so the agent can't be used to find out which codes are live. The PIN never leaves the ledger layer and never reaches the model.
 
 Every tool returns readable JSON with an `ok` flag, and failures come back as codes the skill has wording for (`not_permitted`, `not_found`, `paystack_unreachable`, `not_fully_paid`…) rather than as exceptions. An error Chord can't read is an error the agent will improvise around.
@@ -62,7 +64,7 @@ curl -s localhost:3000/health | jq
 npm run smoke
 ```
 
-Boots the server, talks to it with a real MCP client, and walks all seven tools over 91 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a wrong PIN on every tool, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
+Boots the server, talks to it with a real MCP client, and walks all eight tools over 110 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a wrong PIN on every tool, a part payment getting no pickup code, a reused code, a staff account locked out after three wrong codes, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
 
 To poke at the tools by hand:
 
@@ -92,6 +94,6 @@ Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `h
 
 ## How AI tools were used
 
-Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the seven tools and the rules they had to enforce. I made the design calls — what counts as proof of payment, oldest-invoice-first, who can mark what — and had Claude build to them, then pushed back where the first pass was too loose. Cursor for smaller edits. The skill is mine; the tone and the payment-intent rules are the part I didn't want a model guessing at.
+Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls — what counts as proof of payment, oldest-invoice-first, who can mark what — and had Claude build to them, then pushed back where the first pass was too loose. Cursor for smaller edits. The skill is mine; the tone and the payment-intent rules are the part I didn't want a model guessing at.
 
 One example of the back-and-forth being worth it: the first smoke test failed on "staff cannot release a part-paid invoice" because the invoice I picked had already gone out on credit, so the agent warned about the handover instead of the balance. The code was right and my test was wrong. That precedence — *you already gave this away* beats *this isn't paid yet* — is now asserted on purpose.

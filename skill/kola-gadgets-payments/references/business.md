@@ -28,24 +28,37 @@ Every invoice covers one pickup and has one of these states:
 | --- | --- |
 | Unpaid, not collected | Reserved. Must be fully paid before release. |
 | Unpaid, collected | Taken on credit. Payment is owed. |
-| Part-paid | Some payment verified; an amount is still outstanding. |
-| Paid, not collected | Safe for staff to release. |
-| Paid, collected | Closed. |
+| Part-paid | Some payment verified; an amount is still outstanding. **No pickup code.** |
+| Paid, not collected | Has a pickup code. Staff release it only when the reseller reads that code out. |
+| Paid, collected | Closed. The code is spent. |
 
-An invoice may only move to "paid" through a verified Paystack payment. It may only move to "collected" when staff record a handover, or when it was taken on credit at the counter.
+An invoice may only move to "paid" through a verified Paystack payment. It may only move to "collected" when staff release it against the reseller's pickup code, or when it was taken on credit at the counter.
+
+### Pickup codes
+
+| Setting | Value |
+| --- | --- |
+| Length | 6 digits |
+| Issued | By `verify_payment`, the moment a payment clears an invoice in full |
+| Issued for a part payment | Never |
+| Uses | One. Spent as soon as staff release the goods |
+| Who may be told a code | Only the reseller who paid, signed in with their code and PIN |
+| Wrong codes before a staff account is locked | 3 |
+
+This is how the market already works, which is why it is worth copying: the code is the receipt, and the shop boy does not have to understand the ledger to do the right thing. The owner can be in Dubai and the goods still only move when the money has.
 
 ## Part payments
 
 - Apply a part payment to the oldest outstanding invoice first, unless the reseller names a different invoice.
-- A part payment never releases goods. Staff can only release an invoice once it is fully paid.
+- A part payment never releases goods, and never produces a pickup code. Staff can only release an invoice once it is fully paid.
 - Before creating the link, always show which invoice the money will go to and what will be left afterwards.
 
 ## Roles
 
 | Role | Can | Cannot |
 | --- | --- | --- |
-| Reseller | See and pay their own invoices, check their status | See anyone else's invoices; mark anything paid |
-| Staff | Check any invoice's payment status; record a handover | Mark anything paid; change amounts |
+| Reseller | See and pay their own invoices, check their status, get their own pickup codes | See anyone else's invoices or codes; mark anything paid |
+| Staff | Check any invoice's payment status; release goods against a pickup code | Mark anything paid; change amounts; see or be told a pickup code |
 | Owner | Everything, through the ledger sheet | — |
 
 ### Account codes, not phone numbers

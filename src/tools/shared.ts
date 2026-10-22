@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { config } from "../config.js";
 import { naira } from "../lib/format.js";
 import { derivedStatus, outstandingNgn, type Invoice, type Person } from "../ledger/index.js";
@@ -18,6 +19,12 @@ export interface InvoiceView {
   collected_by?: string;
 }
 
+/**
+ * The invoice shape every tool returns. Deliberately has no `pickup_code`:
+ * staff see invoice status through these, and a code staff can read is a code
+ * that can release goods without the reseller present. Only
+ * `get_pickup_codes` attaches one, and only for the reseller who owns it.
+ */
 export function invoiceView(invoice: Invoice): InvoiceView {
   const outstanding = outstandingNgn(invoice);
   return {
@@ -85,6 +92,30 @@ export function creditSummary(invoices: Invoice[]) {
     credit_limit_ngn: config.business.creditLimitNgn,
     over_credit_limit: outstanding > config.business.creditLimitNgn,
   };
+}
+
+/**
+ * A six-digit pickup code, unique among the codes still live in the ledger.
+ *
+ * `randomInt` rather than `Math.random`: this is the only thing standing
+ * between a stranger at the counter and a ₦2.4m laptop, so it should not be
+ * predictable from an earlier code.
+ */
+export function newPickupCode(takenCodes: Set<string>): string {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const code = String(randomInt(100_000, 1_000_000));
+    if (!takenCodes.has(code)) return code;
+  }
+  // 50 collisions against a six-digit space means something is very wrong —
+  // better to fail loudly than hand out a code that is already in use.
+  throw new Error("Could not find an unused pickup code after 50 attempts.");
+}
+
+/** Codes that must not be reissued: anything not yet collected. */
+export function liveCodes(invoices: Invoice[]): Set<string> {
+  return new Set(
+    invoices.filter((invoice) => !invoice.collected && invoice.pickup_code !== "").map((i) => i.pickup_code),
+  );
 }
 
 /**

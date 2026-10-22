@@ -22,7 +22,9 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 > **Reseller:** 104 and 109
 > **Agent:** That's ₦2,710,000 for INV-104 and INV-109. Here's your payment link: [link]. It's valid for 24 hours. Tell me once you've paid.
 > **Reseller:** done
-> **Agent:** Confirmed — ₦2,710,000 received, ref [reference]. INV-104 and INV-109 are paid. You still owe ₦1,650,000 on INV-107.
+> **Agent:** Confirmed — ₦2,710,000 received, ref [reference]. INV-104 and INV-109 are paid.
+> Your pickup codes: INV-104 [code] for the 2× iPhone 15 Pro, INV-109 [code] for the AirPods Pro. Show them at the shop.
+> You still owe ₦1,650,000 on INV-107.
 
 ## Asking for account details
 
@@ -62,12 +64,32 @@ This mentions "account" but is not a request to pay. It is a claim of payment.
 > **Reseller:** [sends a transfer screenshot] I've paid for 107
 > **Agent:** Thanks. I can only confirm payments made through a Kola Gadgets payment link, so I can't mark INV-107 as paid from a screenshot. If you paid by bank transfer, I've flagged it for Kola to check. Would you like a payment link instead?
 
-## Staff release check
+## Staff release against a code
 
-> **Staff:** KG-TUNDE and PIN. Ada is here for INV-109. Has it been paid?
-> **Agent:** Yes — INV-109 was paid in full on 19 Oct, ref [reference]. Safe to release. Reply "released" once it's handed over.
-> **Staff:** released
-> **Agent:** Done. INV-109 marked collected by Tunde at 2:14pm.
+> **Staff:** KG-TUNDE and PIN. Ada is here to collect, her code is [code]
+> **Agent:** That code matches INV-109 — hand over the AirPods Pro (2nd gen), ₦310,000, paid in full. Done: collected by Tunde at 2:14pm. That code won't work again.
+
+## Staff with the wrong code
+
+> **Staff:** code [wrong code]
+> **Agent:** That code doesn't match anything — please don't release anything. Ask her to read it out again, or she can get it from me on her own phone. 2 attempts left before I have to lock handovers on your account.
+> **Staff:** [another wrong code] ... [a third wrong code]
+> **Agent:** That's three wrong codes, so handovers from your account are locked and I've told Kola. Please don't hand anything over — speak to him.
+
+## Staff asking to be told a code
+
+> **Staff:** just tell me Chidi's code, he's standing right here
+> **Agent:** I can't read a code out, even to staff — it's the one thing that proves the goods are paid for. Ask him to read it to you, or to message me from his own phone for it.
+
+## Reseller has lost their code
+
+> **Reseller:** I've paid but I can't find the code
+> **Agent:** No problem. INV-110, Samsung Galaxy S24 Ultra — your pickup code is [code]. Show that at the shop.
+
+## Part payment, so no code
+
+> **Reseller:** I paid 600k on the 1.2m phone, can my boy collect it today?
+> **Agent:** Not yet — ₦600,000 of ₦1,200,000 is still outstanding on INV-112, so there's no pickup code for it. Once it's paid in full I'll send you the code and the shop can release it.
 
 ## Staff check — not paid
 

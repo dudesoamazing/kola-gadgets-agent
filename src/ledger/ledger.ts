@@ -1,5 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
-import { normaliseAccountCode, normalisePhone, normalisePin } from "../lib/format.js";
+import {
+  normaliseAccountCode,
+  normalisePhone,
+  normalisePickupCode,
+  normalisePin,
+} from "../lib/format.js";
 import { cell, optionalCell, type TableStore } from "./store.js";
 import type { AuthResult, Flag, Invoice, Ledger, Payment, PaymentStatus, Role } from "./types.js";
 
@@ -101,6 +106,7 @@ export class TableLedger implements Ledger {
     return rows.map((row) => ({
       invoice_id: cell(row, header, "invoice_id"),
       account_id: cell(row, header, "account_id").toUpperCase(),
+      pickup_code: normalisePickupCode(optionalCell(row, header, "pickup_code")),
       items: cell(row, header, "items"),
       amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
       amount_paid_ngn: parseAmount(cell(row, header, "amount_paid_ngn")),
@@ -123,6 +129,17 @@ export class TableLedger implements Ledger {
     return invoices.find((invoice) => normaliseInvoiceId(invoice.invoice_id) === wanted);
   }
 
+  async findInvoiceByPickupCode(pickupCode: string): Promise<Invoice | undefined> {
+    const wanted = normalisePickupCode(pickupCode);
+    if (wanted === "") return undefined;
+    const invoices = await this.listInvoices();
+    // A collected invoice keeps its code for the audit trail, so match on the
+    // code alone and let the caller refuse on the collected flag. Two rows
+    // sharing a code would be a seeding mistake; prefer the uncollected one.
+    const matches = invoices.filter((invoice) => invoice.pickup_code === wanted);
+    return matches.find((invoice) => !invoice.collected) ?? matches[0];
+  }
+
   async updateInvoice(invoiceId: string, patch: Partial<Invoice>): Promise<void> {
     const wanted = normaliseInvoiceId(invoiceId);
     const { header, rows } = await this.store.readTable("Invoices");
@@ -135,6 +152,7 @@ export class TableLedger implements Ledger {
     if (patch.amount_paid_ngn !== undefined) {
       cells["amount_paid_ngn"] = String(Math.round(patch.amount_paid_ngn));
     }
+    if (patch.pickup_code !== undefined) cells["pickup_code"] = patch.pickup_code;
     if (patch.collected !== undefined) cells["collected"] = patch.collected ? "yes" : "no";
     if (patch.collected_at !== undefined) cells["collected_at"] = patch.collected_at;
     if (patch.collected_by !== undefined) cells["collected_by"] = patch.collected_by;

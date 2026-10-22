@@ -16,11 +16,12 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | 20 Oct | Sent questions on sender identity and the built-in Paystack connector |
 | 20–21 Oct | Account setup and building outside Chord; Paystack and the Google Sheet wired up and proven |
 | **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
-| **22 Oct** | **Credits added — the 5-day clock is running** |
+| **22 Oct** | **Credits added — the 5-day clock started** |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
-| ~27 Oct | Submit |
+| **Mon 26 Oct, evening** | **Submit** — deliberately a night early |
+| **Tue 27 Oct, ~13:30** | Hard deadline (5 days from credits) |
 
-The clock started on 22 Oct, not 26 Oct — the credits arrived early.
+Submit Monday night, not Tuesday lunchtime. The buffer is for the things that only break on the day.
 
 ## The problem
 
@@ -38,6 +39,7 @@ This is a real problem Marvin has lived as a reseller. Keep that story at the ce
   - Owner — everything, through the Google Sheet.
 - **Identity is proven, not inferred.** Chord tells the agent nothing about who is messaging (confirmed 22 Oct), so everyone has an account code Kola issued plus a 4-digit PIN, and both go to every tool on every call. A happy side effect of losing phone identity: a reseller can message from any phone and still see their own balance, which is what suppliers actually wanted. Only Kola can issue or reset a code — the agent never accepts "it's me, I've lost my PIN".
 - **Only a verified Paystack payment marks an invoice paid.** Screenshots and "I've paid" are not proof.
+- **Pickup codes: no code, no goods.** Copied from how Computer Village already works, which is why it needs no explaining to staff. A verified payment that clears an invoice in full mints a unique 6-digit code; the reseller reads it out at the counter and staff release against it. A part payment never produces one. **No tool ever shows a code to staff** — they prove a code by using it, not by being told it — and three wrong codes lock handovers from that staff account and flag the owner. The real value: the shop boy doesn't need to understand the ledger to do the right thing, and the owner can be in Dubai while the goods still only move when the money has.
 - **Payment-intent recognition is the centrepiece.** "acct dets", "account number", "where do I send the money?" → intercept with a payment link instead of bank details. Context decides, not keywords ("I sent it to your account" is a payment claim, not a request). Details in the skill.
 - **Automatic with the reseller's confirmation.** The agent confirms invoices and total, sends the link on "yes". Owner approval only for exceptions (disputes, over credit limit, insists on bank transfer).
 - **Part payments go to the oldest invoice first** unless the reseller names one. A part payment never releases goods.
@@ -77,7 +79,7 @@ src/
     csv-store.ts      local data/*.csv
     ledger.ts         parsing, status rules, oldest-first ordering
   paystack/           initialize + verify, plus mock.ts stand-in
-  tools/index.ts      the seven tools
+  tools/index.ts      the eight tools
 scripts/smoke.ts      end-to-end test, no credentials needed
 scripts/setup-sheet.ts  creates and seeds the four tabs
 ```
@@ -85,7 +87,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 | Command | Does |
 | --- | --- |
 | `npm run dev` | Local server on :3000, hot reload |
-| `npm run smoke` | Boots the server, drives all seven tools over real MCP HTTP — 91 assertions |
+| `npm run smoke` | Boots the server, drives all eight tools over real MCP HTTP — 110 assertions |
 | `npm run typecheck` | `tsconfig.json` (src + scripts) |
 | `npm run build` / `start` | `tsconfig.build.json` → `dist/index.js` (src only, so output isn't nested) |
 | `npm run setup:sheet` | Creates and seeds the ledger tabs; `--force` to replace |
@@ -116,7 +118,18 @@ TSG confirmed Chord passes **no sender identity at all** to a teammate or its MC
 - **No live credential appears in the skill.** Caught this on review: the first draft of `examples.md` showed "KG-ADA 4461", and the skill is uploaded to Chord — so the model would have been carrying a working code and PIN it could be talked into handing over. Examples now write PINs as "4 digits", and `business.md` deliberately does not list the account codes.
 - **Tested:** wrong PIN refused on every tool, identical message for unknown code and bad PIN, no PIN in any tool output or ledger row, spacing and case ignored, five misses flagged, and the account still usable afterwards.
 
-### Tools (names must match the skill)
+### Pickup codes (added 23 Oct — built)
+
+- **Invoices tab** has `pickup_code`. Blank until a verified payment settles the invoice in full.
+- **Minted in `verify_payment` only**, and only when that payment takes the invoice to zero outstanding. Generated with `crypto.randomInt` — this is the only thing between a stranger at the counter and a ₦2.4m laptop, so it must not be predictable from an earlier code — and checked against every code still live so two resellers can never hold the same one.
+- **Never reissued.** An invoice that already has a code keeps it, so verifying twice cannot mint a second code for the same goods. Asserted in the smoke test.
+- **`invoiceView` deliberately has no `pickup_code` field.** Staff read invoice status through that shape, and a code staff can read is a code that releases goods without the reseller present. `get_pickup_codes` is the only place a code comes out.
+- **Three wrong codes locks handovers from that staff account** and flags the owner. Deliberately stricter than the PIN policy, which never locks: a wrong PIN is usually a reseller fumbling their own credentials, while a wrong pickup code is someone at the counter trying to leave with a laptop. One staff account locking must not shut the shop — asserted that Tunde still works after Bisi is locked. In-process, so a deploy clears it.
+- **A code is spent on use.** The row keeps it for the audit trail; re-use is refused on the `collected` flag, which also means `already_collected` is what staff hear if someone tries a code twice.
+- **Seed data:** INV-110 (Chidi, paid, uncollected) carries `418637` so the staff release demo runs without taking a payment first.
+- **No live code in the skill**, same rule as PINs — examples write `[code]`.
+
+### Tools (names must match the skill) — eight
 
 | Tool | Input | Does |
 | --- | --- | --- |
@@ -125,7 +138,8 @@ TSG confirmed Chord passes **no sender identity at all** to a teammate or its MC
 | `check_invoice_status` | `account_code`, `pin`, `invoice_id` | Status, amount paid/outstanding, collected/when/by whom. Resellers only see their own |
 | `create_payment_link` | `account_code`, `pin`, `invoice_ids[]`, `amount_ngn?` | Resellers only. Validate invoices belong to them and amount ≤ outstanding (≥ ₦50,000 if part); call Paystack initialize with our own reference and invoice IDs in metadata; log the pending row **after** Paystack returns a link; return link + reference |
 | `verify_payment` | `account_code`, `pin`, `reference` | Only references we issued — an unknown one returns `not_found` — and only for the sender's own account unless they are staff or the owner. Call Paystack verify. On `success`, apply to invoices (oldest first) **once** — reports the existing confirmation if already applied. Any unallocatable remainder is flagged for the owner |
-| `record_handover` | `account_code`, `pin`, `invoice_id` | Staff and owner. Refuse unless fully paid and not collected — `already_collected` takes precedence over `not_fully_paid`, because "you already gave this away" is the more urgent warning. Set collected, time, staff name |
+| `get_pickup_codes` | `account_code`, `pin` | Resellers only. Their paid, uncollected invoices with each pickup code. The only tool that returns a code, and only to the account that paid |
+| `record_handover` | `account_code`, `pin`, `pickup_code` | Staff and owner. Look the invoice up by code; refuse unless paid in full and uncollected; name the item to release; set collected, time, staff name. The code is then spent. A wrong code releases nothing and counts towards the 3-strike lock |
 | `flag_for_owner` | `account_code`, `pin`, `invoice_id?`, `summary` | Append to Flags tab. Needs valid credentials like everything else, so an unidentified person can no longer be flagged — tell them to contact the shop instead |
 
 Every tool returns plain, model-readable JSON, and clear errors (`not_found`, `not_permitted`, `paystack_unreachable`…) rather than throwing — the skill tells the agent how to word each failure.
@@ -152,7 +166,7 @@ Seed data in `data/*.csv`. `npm run setup:sheet` creates the four tabs and fills
 Tabs:
 
 - **People:** account_code, pin, name, role, email, account_id, phone (contact only — never identity)
-- **Invoices:** invoice_id, account_id, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
+- **Invoices:** invoice_id, account_id, pickup_code, items, amount_ngn, amount_paid_ngn, created_at, collected, collected_at, collected_by
 - **Payments:** reference, account_id, invoice_ids, amount_ngn, status, link, created_at, verified_at
 - **Flags:** created_at, account_code, invoice_id, summary
 
@@ -193,15 +207,16 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Paystack test account + secret key — in `.env` (never committed), `PAYSTACK_MODE=live`
 - [x] Google Cloud project, Sheets API, service account key; Sheet "kolagadgets" created and shared — verified 21 Oct end to end on `LEDGER_BACKEND=sheets`: `/health` ok, a real Paystack link wrote a pending row, verify applied ₦310,000 to INV-109 and marked it paid, a repeat verify did not re-apply, staff release wrote collected/by/at. Sheet reset to seed data afterwards with `setup:sheet -- --force`
 - [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
-- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all seven tools over real MCP HTTP, 91 assertions
-- [x] README drafted (`README.md`) — how to run, the seven tools, how AI tools were used
+- [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all eight tools over real MCP HTTP, 110 assertions
+- [x] README drafted (`README.md`) — how to run, the eight tools, how AI tools were used
 - [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
 - [x] Multiple phones per reseller account — solved outright by dropping phone identity on 22 Oct; a code works from any device
 - [x] `verify_payment` refuses a reference from another account; staff and the owner may verify any
-- [x] **Identity rebuilt on account code + PIN (22 Oct)** after TSG confirmed Chord passes no sender identity: `identify` replaces `get_sender_role`, all seven tools take `account_code` + `pin` and re-check on every call, PIN never echoed, five misses flag the owner. Skill, seed data, smoke tests and field notes updated
+- [x] **Identity rebuilt on account code + PIN (22 Oct)** after TSG confirmed Chord passes no sender identity: `identify` replaces `get_sender_role`, every tool takes `account_code` + `pin` and re-checks on every call, PIN never echoed, five misses flag the owner. Skill, seed data, smoke tests and field notes updated
 - [x] Real Paystack test mode proven end to end (20 Oct): tool created a live `checkout.paystack.com` link for ₦2,710,000; a test-card charge then verified, applied to INV-109, marked it paid and safe to release; a second verify reported the existing payment without re-applying; another reseller was refused the reference; staff release worked and refused twice. Two real bugs found and fixed — see field notes
 - [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note covers issuing codes and PINs
+- [x] **Pickup codes (23 Oct)** — `pickup_code` on Invoices, minted by `verify_payment` only on full settlement, `get_pickup_codes` for resellers, `record_handover` works from the code, 3 wrong codes locks that staff account. Skill, examples, seed data, smoke tests and go-live note updated
 - [ ] Rehearse one unbroken click-through on real Paystack test mode: create the link → open it in a browser → pay with the test card → "paid" → `verify_payment` → Sheet updates (see `docs/live-session.md`, "Recording run")
 - [x] Chord account email sent; credits added 22 Oct
 - [ ] Register MCP server, upload skill, test every path in the simulator

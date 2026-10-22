@@ -1,7 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { config } from "../config.js";
-import { lagosTimestamp, naira, normaliseAccountCode } from "../lib/format.js";
+import {
+  lagosTimestamp,
+  naira,
+  normaliseAccountCode,
+  normalisePickupCode,
+} from "../lib/format.js";
 import {
   getLedger,
   normaliseInvoiceId,
@@ -22,6 +27,8 @@ import {
   creditSummary,
   invoiceView,
   isUnsettled,
+  liveCodes,
+  newPickupCode,
   newReference,
   senderView,
 } from "./shared.js";
@@ -56,6 +63,19 @@ const invoiceArg = z
  */
 const failedAttempts = new Map<string, number>();
 const FAILURES_BEFORE_FLAG = 5;
+
+/**
+ * Wrong pickup codes per staff account, and the accounts shut out as a result.
+ *
+ * Deliberately stricter than the PIN policy above: a wrong PIN is usually a
+ * reseller fumbling their own credentials, while a wrong pickup code is
+ * someone at the counter trying to leave with a laptop. Three strikes locks
+ * handovers from that account until Kola intervenes. In-process, so a deploy
+ * clears it — noted in the README as a limit.
+ */
+const wrongCodeAttempts = new Map<string, number>();
+const handoverLocks = new Set<string>();
+const WRONG_CODES_BEFORE_LOCK = 3;
 
 /**
  * Check the credentials on this call and return the person, or the refusal
@@ -550,20 +570,43 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           const invoices = await invoicesFor();
           const { allocations, unallocatedNgn } = allocateOldestFirst(paidNgn, invoices);
 
+          // Codes already in use, so a new one cannot collide with a code
+          // somebody is holding right now.
+          const taken = liveCodes(await db.listInvoices());
+
           const applied: Array<Record<string, unknown>> = [];
           for (const { invoice, appliedNgn } of allocations) {
             const newPaid = invoice.amount_paid_ngn + appliedNgn;
-            await db.updateInvoice(invoice.invoice_id, { amount_paid_ngn: newPaid });
             const nowOutstanding = Math.max(0, invoice.amount_ngn - newPaid);
+            const settledNow = nowOutstanding === 0;
+
+            // A pickup code is issued only when this payment clears the
+            // invoice in full, and only once. A part payment never gets one —
+            // that is the whole point: no code, no goods. An invoice that
+            // already has a code keeps it, so verifying twice cannot mint a
+            // second code for the same goods.
+            const issueCode = settledNow && !invoice.collected && invoice.pickup_code === "";
+            const pickupCode = issueCode ? newPickupCode(taken) : invoice.pickup_code;
+            if (issueCode) taken.add(pickupCode);
+
+            await db.updateInvoice(invoice.invoice_id, {
+              amount_paid_ngn: newPaid,
+              ...(issueCode ? { pickup_code: pickupCode } : {}),
+            });
+
             applied.push({
               invoice_id: invoice.invoice_id,
               items: invoice.items,
               applied_ngn: appliedNgn,
               applied_display: naira(appliedNgn),
-              now_status: nowOutstanding === 0 ? "paid" : "part_paid",
+              now_status: settledNow ? "paid" : "part_paid",
               outstanding_ngn: nowOutstanding,
               outstanding_display: naira(nowOutstanding),
-              safe_to_release: nowOutstanding === 0 && !invoice.collected,
+              safe_to_release: settledNow && !invoice.collected,
+              // Present only for an invoice this payment settled outright.
+              ...(settledNow && !invoice.collected && pickupCode !== ""
+                ? { pickup_code: pickupCode }
+                : {}),
             });
           }
 
@@ -600,22 +643,79 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             flagged_for_owner: unallocatedNgn > 0,
             remaining_balance: stillOwed.map(invoiceView),
             ...creditSummary(stillOwed),
-            note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding.",
+            note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Nothing is released without it. A part-paid invoice has no code and must not be collected.",
           });
         }),
       ),
+  );
+
+  // -------------------------------------------------------- pickup codes ---
+  server.registerTool(
+    "get_pickup_codes",
+    {
+      title: "Pickup codes for a reseller",
+      description:
+        "List the reseller's fully paid invoices that have not been collected yet, each with its pickup code. Resellers only — this is the one tool that returns a code, and only to the person who paid. Use it when a reseller asks what is ready to collect or has lost a code.",
+      inputSchema: { account_code: accountCodeArg, pin: pinArg },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ account_code, pin }) =>
+      guard(async () => {
+        const db = ledger();
+        const sender = await authenticated(db, account_code, pin);
+        if ("error" in sender) return sender.error;
+        const { person } = sender;
+
+        if (person.role !== "reseller") {
+          return fail(
+            "not_permitted",
+            `Pickup codes are only ever shown to the reseller who paid. ${person.name} is ${person.role}. Staff confirm a code by using it in record_handover; they never get to read one.`,
+            senderView(person),
+          );
+        }
+
+        const invoices = await db.listInvoicesForAccount(person.account_id);
+        const ready = invoices.filter((invoice) => !isUnsettled(invoice) && !invoice.collected);
+
+        if (ready.length === 0) {
+          return ok({
+            ...senderView(person),
+            ready_to_collect: [],
+            note: "Nothing is waiting to be collected. Say so plainly. If they have just paid, check the payment first with verify_payment.",
+          });
+        }
+
+        return ok({
+          ...senderView(person),
+          ready_to_collect: ready.map((invoice) => ({
+            ...invoiceView(invoice),
+            pickup_code: invoice.pickup_code || undefined,
+            // A paid, uncollected invoice from before codes existed has none.
+            // Do not invent one: only a verified payment mints a code.
+            needs_code_from_owner: invoice.pickup_code === "",
+          })),
+          note: "Give each code with its invoice and item, and tell them to show it at the shop. Anything marked needs_code_from_owner has no code yet — tell them Kola will sort it out and flag it for him.",
+        });
+      }),
   );
 
   // ------------------------------------------------------------- handover ---
   server.registerTool(
     "record_handover",
     {
-      title: "Record a handover",
+      title: "Release goods against a pickup code",
       description:
-        "Record that stock has been handed to a reseller. Staff and the owner only. Refuses unless the invoice is paid in full and has not already been collected. This never changes what has been paid.",
-      inputSchema: { account_code: accountCodeArg, pin: pinArg, invoice_id: invoiceArg },
+        "Release stock to a reseller who has read out their pickup code. Staff and the owner only. Looks the code up, refuses unless that invoice is paid in full and not already collected, then names the item to hand over and marks it collected. A code works exactly once.",
+      inputSchema: {
+        account_code: accountCodeArg,
+        pin: pinArg,
+        pickup_code: z
+          .string()
+          .min(4)
+          .describe("The six digits the reseller read out. Spaces are ignored."),
+      },
     },
-    async ({ account_code, pin, invoice_id }) =>
+    async ({ account_code, pin, pickup_code }) =>
       guard(async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
@@ -625,31 +725,70 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         if (person.role !== "staff" && person.role !== "owner") {
           return fail(
             "not_permitted",
-            `Only Kola Gadgets staff can record a handover. ${person.name} is a reseller.`,
+            `Only Kola Gadgets staff can release goods. ${person.name} is a reseller — if they are collecting, staff must do this with their code.`,
             senderView(person),
           );
         }
 
-        const invoice = await db.findInvoice(invoice_id);
+        // A staff account that has already burned through its attempts stays
+        // shut until Kola sorts it out. Unlike a wrong PIN, a wrong pickup
+        // code is someone trying to walk out with goods, so here a lock is
+        // the lesser harm.
+        if (handoverLocks.has(person.account_code)) {
+          return fail(
+            "not_permitted",
+            `Handovers from ${person.name}'s account are locked after ${WRONG_CODES_BEFORE_LOCK} wrong pickup codes. Tell them to release nothing and speak to Kola, who has been told.`,
+            { locked: true },
+          );
+        }
+
+        const code = normalisePickupCode(pickup_code);
+        const invoice = await db.findInvoiceByPickupCode(code);
+
         if (!invoice) {
-          return fail("not_found", `There is no invoice ${normaliseInvoiceId(invoice_id)} in the ledger.`, {
-            invoice_id: normaliseInvoiceId(invoice_id),
-          });
+          const wrong = (wrongCodeAttempts.get(person.account_code) ?? 0) + 1;
+          wrongCodeAttempts.set(person.account_code, wrong);
+          const nowLocked = wrong >= WRONG_CODES_BEFORE_LOCK;
+
+          if (nowLocked) {
+            handoverLocks.add(person.account_code);
+            try {
+              await db.appendFlag({
+                created_at: lagosTimestamp(),
+                account_code: person.account_code,
+                invoice_id: "",
+                summary: `${person.name} entered ${wrong} wrong pickup codes and handovers from that account are now locked. Someone may be trying to collect goods without a code.`,
+              });
+            } catch (error) {
+              console.error("[handover] could not log the lockout:", error);
+            }
+          }
+
+          return fail(
+            "not_found",
+            nowLocked
+              ? `That code does not match anything, and after ${wrong} wrong codes handovers from this account are now locked. Release nothing and tell them to speak to Kola — he has been told.`
+              : `That code does not match any invoice. Release nothing. Ask the reseller to read it out again, or to ask the agent for it from their own phone. ${WRONG_CODES_BEFORE_LOCK - wrong} attempt(s) left before handovers from this account are locked.`,
+            { wrong_attempts: wrong, locked: nowLocked },
+          );
         }
 
         if (invoice.collected) {
           return fail(
             "already_collected",
-            `${invoice.invoice_id} was already collected on ${invoice.collected_at || "an unrecorded date"} by ${invoice.collected_by || "an unrecorded staff member"}. Warn them to check before releasing anything again.`,
+            `${invoice.invoice_id} was already collected on ${invoice.collected_at || "an unrecorded date"} by ${invoice.collected_by || "an unrecorded staff member"}, and a code only works once. Release nothing and check with Kola before handing anything over.`,
             { invoice: invoiceView(invoice) },
           );
         }
 
         const outstanding = outstandingNgn(invoice);
         if (outstanding > 0) {
+          // Should be unreachable: codes are only minted on full payment.
+          // Kept because a hand-typed code in the sheet could get here, and
+          // releasing part-paid goods is the expensive mistake.
           return fail(
             "not_fully_paid",
-            `Do not release ${invoice.invoice_id}. ${naira(outstanding)} of ${naira(invoice.amount_ngn)} is still outstanding. A part payment never releases goods.`,
+            `Do not release ${invoice.invoice_id}. ${naira(outstanding)} of ${naira(invoice.amount_ngn)} is still outstanding, so that code should not exist. Flag it for Kola.`,
             { invoice: invoiceView(invoice) },
           );
         }
@@ -660,14 +799,16 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           collected_at: at,
           collected_by: person.name,
         });
+        wrongCodeAttempts.delete(person.account_code);
 
         return ok({
           ...senderView(person),
           invoice_id: invoice.invoice_id,
           items: invoice.items,
+          amount_display: naira(invoice.amount_ngn),
           collected_at: at,
           collected_by: person.name,
-          note: `Confirm the handover with the time and ${person.name}'s name.`,
+          note: `Code matched. Hand over ${invoice.items} against ${invoice.invoice_id} and confirm the time and ${person.name}'s name. That code is now spent.`,
         });
       }),
   );

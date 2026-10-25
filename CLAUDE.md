@@ -179,7 +179,9 @@ Ownership is by account — see "Identity: account code + PIN" above. Codes and 
 
 ### Hosting — live
 
-**`https://kola-gadgets-mcp.onrender.com`** — free Render web service from `render.yaml`, health check on `/health`, secrets in the dashboard (`sync: false`). Free tiers sleep, so a cold start can make Chord time out on the first call. Keep it awake or log it as a field note.
+**`https://kola-gadgets-mcp.onrender.com`** — free Render web service from `render.yaml`, health check on `/health`, secrets in the dashboard (`sync: false`).
+
+**Confirmed 25 Oct:** the free tier sleeps after ~15 minutes, and Chord's first call to a cold server fails as **`gateway request failed 500`**. A retry works. **Hit `/health` before the simulator and before recording.** Written up in the field notes — the useful part is that Chord's error is identical whether the server 500'd, timed out, or was asleep.
 
 Register in Chord as: transport **Streamable HTTP**, URL `https://kola-gadgets-mcp.onrender.com/mcp`, auth **bearer**, token from the Render dashboard's `MCP_BEARER_TOKEN` — a 64-char random hex, swapped in on 25 Oct. The first deploy went out with `kola-local-dev-token`, a guessable dev placeholder guarding a public URL that can issue payment links and release stock. Don't put a dev token on a production service.
 
@@ -229,7 +231,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] **Pickup codes (23 Oct)** — `pickup_code` on Invoices, minted by `verify_payment` only on full settlement, `get_pickup_codes` for resellers, `record_handover` works from the code, 3 wrong codes locks that staff account. Skill, examples, seed data, smoke tests and go-live note updated
 - [x] **Unbroken click-through proven on real Paystack test mode (25 Oct)** — `create_payment_link` on production issued `checkout.paystack.com/f35kw562fpz24nn`, Marvin opened and paid it with the test card in a browser, `verify_payment` returned `success` (channel `card`), applied ₦310,000, marked INV-109 paid and minted pickup code; a repeat verify did not re-apply; staff released against the code and were refused the second time. Beats and timings in `docs/recording-script.md`
 - [x] Chord account email sent; credits added 22 Oct
-- [ ] Register MCP server, upload skill, test every path in the simulator
+- [~] Register MCP server, upload skill, test every path in the simulator — **MCP server registered 25 Oct**; first `show tools` failed with `gateway request failed 500` (cold free-tier server), retry listed all eight. Skill upload and the simulator paths still to do
 - [ ] Record, finish field notes, submit
 
 ## Writing style

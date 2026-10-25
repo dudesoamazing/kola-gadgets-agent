@@ -7,7 +7,7 @@ back at demo numbers, so running it again gives the same results.
 ## Before you hit record
 
 1. `npm run setup:sheet -- --force` — Ada must owe ₦4,360,000, INV-112 part-paid, INV-110 uncollected.
-2. `curl -s https://kola-gadgets-mcp.onrender.com/health` — wakes the free tier. A cold start can time out Chord's first call, and that is not the first thing you want on camera.
+2. `curl -s https://kola-gadgets-mcp.onrender.com/health` — wakes the free tier. **Not optional:** confirmed on 25 Oct that Chord's first call to a cold server fails as `gateway request failed 500`. It retries fine, but you don't want that on camera.
 3. Open the Google Sheet on a second monitor or a second tab, on the **Invoices** tab, with INV-109's row visible.
 4. Have the test card ready: `4084 0840 8408 4081`, CVV `408`, expiry `12/30`, any OTP.
 5. Credentials you'll type: **KG-ADA / 4461** (Ada, reseller), **KG-TUNDE / 2270** (Tunde, staff).
@@ -55,7 +55,7 @@ Step 8: `already_collected`.
 ## If something goes wrong on the day
 
 - **"No completed payment on this link yet."** This is the honest answer when the link hasn't been paid — verified, it returns `abandoned`. Don't panic: say "give it a second" and ask again. It's a good beat, not a failure.
-- **Chord times out on the first message.** The free tier went to sleep. Hit `/health` and start again.
+- **`gateway request failed 500` on the first message.** The free tier went to sleep — this is confirmed behaviour, not a guess. Hit `/health`, wait a beat, send it again. It works on the retry.
 - **Paystack is slow.** The agent says nothing has changed on the account. Also fine to show.
 
 ## Spare beats if you have time (all verified)

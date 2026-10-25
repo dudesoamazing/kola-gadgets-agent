@@ -104,6 +104,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 - **Account codes normalised on letters and digits**, so "kg ada", "KG-ADA" and "kgada" all match. PINs normalised on digits, so "4 4 6 1" works. The canonical code the agent says out loud is the one Kola wrote in the sheet, not the squashed comparison key — the smoke test caught the agent calling her account "KGADA".
 - **The PIN never leaves the ledger layer.** `Ledger.authenticate(code, pin)` compares it internally and returns the person or a reason; there is no getter for a PIN anywhere, and `senderView` carries neither PIN nor phone. Anything the model can see, it can repeat into the chat.
 - **Invoice ids normalised on the digits**, so "104", "inv 104" and "INV-104" all resolve.
+- **Explicit `0.0.0.0` binding on `app.listen`.** Render's reverse proxy routes traffic to container IPv4 (`10.x.x.x`); without specifying `0.0.0.0`, Node defaults to IPv6 `::` on Linux containers, returning 502 Bad Gateway to the load balancer.
 
 ### Identity: account code + PIN (rebuilt 22 Oct — built)
 

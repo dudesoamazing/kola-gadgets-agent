@@ -138,7 +138,7 @@ if (problems.length > 0) {
   if (!config.bearerToken) process.exit(1);
 }
 
-app.listen(config.port, () => {
+app.listen(config.port, "0.0.0.0", () => {
   console.log(`kola-gadgets-payments MCP server on :${config.port}`);
   console.log(`  ledger   ${config.ledgerBackend}`);
   console.log(`  paystack ${config.paystack.mode}`);

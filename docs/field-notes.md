@@ -73,3 +73,10 @@ Not Chord problems, so not candidates for the final field notes. Kept here for t
 - **Fix or workaround:** Enabled **Google Sheets API** in the project the service account belongs to, waited a minute, and reran the script.
 - **For the README:** "Enable **Google Sheets API** — not 'Sheets MCP API' — in the same project as your service account. The error message's link opens the right project."
 - **Related:** checked whether Chord could connect to Google's Sheets MCP server directly — it can't; see "Google Workspace's own MCP servers can't connect" above.
+
+### Render returned 502 Bad Gateway because Express listened without explicit 0.0.0.0
+- **What happened** (25 Oct): First deploy on Render booted cleanly with `kola-gadgets-payments MCP server on :10000`, but requests to `/health` timed out and returned HTTP 502 Bad Gateway.
+- **How I found the cause:** The app was running and logged its start banner, and local requests to the Google Sheets backend responded in under 500ms. In Linux container environments (Docker/Render), `app.listen(port)` without a host parameter defaults to IPv6 `::`. Render's reverse proxy routes incoming traffic to the container's private IPv4 address (`10.x.x.x:10000`), which was unreachable.
+- **Fix or workaround:** Explicitly bound to `0.0.0.0`: `app.listen(config.port, "0.0.0.0", () => ...)`.
+- **For the README:** "Always specify host `0.0.0.0` when listening in containerized environments (Render, Railway, Fly.io) so the platform's reverse proxy can route IPv4 traffic."
+

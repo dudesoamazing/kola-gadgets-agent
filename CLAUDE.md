@@ -212,7 +212,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] GitHub repo — pushed to https://github.com/dudesoamazing/kola-gadgets-agent (`main`)
 - [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all eight tools over real MCP HTTP, 110 assertions
 - [x] README drafted (`README.md`) — how to run, the eight tools, how AI tools were used
-- [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend
+- [x] Deploy to public HTTPS — live on Render (https://kola-gadgets-mcp.onrender.com); `/health` reports `ok` on Sheets backend; `tools/list` verified over HTTPS with bearer auth
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
 - [x] Multiple phones per reseller account — solved outright by dropping phone identity on 22 Oct; a code works from any device
 - [x] `verify_payment` refuses a reference from another account; staff and the owner may verify any

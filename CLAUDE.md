@@ -18,6 +18,7 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
 | **22 Oct** | **Credits added — the 5-day clock started** |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
+| **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment setup started |
 | **Mon 26 Oct, evening** | **Submit** — deliberately a night early |
 | **Tue 27 Oct, ~13:30** | Hard deadline (5 days from credits) |
 

@@ -181,7 +181,7 @@ Ownership is by account — see "Identity: account code + PIN" above. Codes and 
 
 Render or Railway, public HTTPS. `render.yaml` is ready — free web service, health check on `/health`, secrets set in the dashboard (`sync: false`). Free tiers sleep, so a cold start can make Chord time out on the first call. Keep it awake or log it as a field note.
 
-Register in Chord as: transport **Streamable HTTP**, URL `https://<host>/mcp`, auth **bearer**, token from `MCP_BEARER_TOKEN`.
+Register in Chord as: transport **Streamable HTTP**, URL `https://kola-gadgets-mcp.onrender.com/mcp`, auth **bearer**, token from Render dashboard `MCP_BEARER_TOKEN`. Local dev uses `kola-local-dev-token` in `.env`.
 
 Our `/health` returns **503** when the ledger or config is broken and lists the problems — the opposite of Chord's probe, which returns 200 either way. Don't confuse the two when debugging.
 

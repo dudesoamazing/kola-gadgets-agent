@@ -80,3 +80,10 @@ Not Chord problems, so not candidates for the final field notes. Kept here for t
 - **Fix or workaround:** Explicitly bound to `0.0.0.0`: `app.listen(config.port, "0.0.0.0", () => ...)`.
 - **For the README:** "Always specify host `0.0.0.0` when listening in containerized environments (Render, Railway, Fly.io) so the platform's reverse proxy can route IPv4 traffic."
 
+### Environment variable quotes broke Google JWT authentication
+- **What happened** (25 Oct): `GOOGLE_PRIVATE_KEY` copied from local `.env` into Render's dashboard retained surrounding double quotes (`"-----BEGIN..."`). OpenSSL threw `DECODER routines::unsupported` on the PEM key, causing `/health` to return 503 and Render to fail the health check.
+- **How I found the cause:** Local `.env` parsers strip quotes automatically, but production environments (Render, Docker) inject `process.env` verbatim. Without quote trimming in `env()`, the PEM parser received a literal quote as the first character instead of `-----BEGIN`.
+- **Fix or workaround:** Cleaned the key in Render's dashboard, updated `src/config.ts` to automatically strip surrounding single/double quotes from all environment variables and private keys, and added explicit error logging to `console.error` in the health check.
+- **For the README:** "Paste private keys into hosting provider dashboards without enclosing quotes."
+
+

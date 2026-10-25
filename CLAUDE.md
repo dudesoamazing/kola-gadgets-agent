@@ -206,7 +206,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Seed ledger data (`data/`)
 - [x] Paystack test account + secret key — in `.env` (never committed), `PAYSTACK_MODE=live`
 - [x] Google Cloud project, Sheets API, service account key; Sheet "kolagadgets" created and shared — verified 21 Oct end to end on `LEDGER_BACKEND=sheets`: `/health` ok, a real Paystack link wrote a pending row, verify applied ₦310,000 to INV-109 and marked it paid, a repeat verify did not re-apply, staff release wrote collected/by/at. Sheet reset to seed data afterwards with `setup:sheet -- --force`
-- [~] GitHub repo — local git repo initialised, first commit made on `main`. Remote still to create: `gh` is not installed on this machine, so it needs doing from the GitHub web UI or after `brew install gh`
+- [x] GitHub repo — pushed to https://github.com/dudesoamazing/kola-gadgets-agent (`main`)
 - [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all eight tools over real MCP HTTP, 110 assertions
 - [x] README drafted (`README.md`) — how to run, the eight tools, how AI tools were used
 - [ ] Deploy to public HTTPS (`render.yaml` ready); check `/health` reports `ok` on the Sheets backend

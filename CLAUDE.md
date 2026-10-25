@@ -16,7 +16,8 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | 20 Oct | Sent questions on sender identity and the built-in Paystack connector |
 | 20–21 Oct | Account setup and building outside Chord; Paystack and the Google Sheet wired up and proven |
 | **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
-| **22 Oct** | **Credits added — the 5-day clock started** |
+| **22 Oct** | Told credits were added — the 5-day clock started |
+| **25 Oct** | **Blocked: no credits on the account and no simulator access.** MCP server registers and lists tools fine; the teammate cannot be run. Emailed TSG the same evening (`docs/tsg-blocker-email.md`) |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
 | **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment setup started |
 | **Mon 26 Oct, evening** | **Submit** — deliberately a night early |
@@ -231,8 +232,9 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] **Pickup codes (23 Oct)** — `pickup_code` on Invoices, minted by `verify_payment` only on full settlement, `get_pickup_codes` for resellers, `record_handover` works from the code, 3 wrong codes locks that staff account. Skill, examples, seed data, smoke tests and go-live note updated
 - [x] **Unbroken click-through proven on real Paystack test mode (25 Oct)** — `create_payment_link` on production issued `checkout.paystack.com/f35kw562fpz24nn`, Marvin opened and paid it with the test card in a browser, `verify_payment` returned `success` (channel `card`), applied ₦310,000, marked INV-109 paid and minted pickup code; a repeat verify did not re-apply; staff released against the code and were refused the second time. Beats and timings in `docs/recording-script.md`
 - [x] Chord account email sent; credits added 22 Oct
-- [~] Register MCP server, upload skill, test every path in the simulator — **MCP server registered 25 Oct**; first `show tools` failed with `gateway request failed 500` (cold free-tier server), retry listed all eight. Skill upload and the simulator paths still to do
+- [~] Register MCP server, upload skill, test every path in the simulator — **MCP server registered 25 Oct** and listing all eight tools. First `show tools` failed with `gateway request failed 500` (cold free-tier server); retry worked. **Blocked from here: no credits, no simulator access.** Chased with TSG 25 Oct
 - [ ] Record, finish field notes, submit
+- [ ] **Contingency if Chord access doesn't arrive:** record against the MCP server directly (Inspector or curl) showing the same eight tools and the real Paystack + Sheet chain, screenshot the Chord Tools panel listing the tools as proof the integration is registered, and say plainly in the submission what was blocked, when it was reported and what would have been shown. The brief explicitly allows this — "submit a working demo that shows what you had in mind, along with a note covering what stopped you"
 
 ## Writing style
 

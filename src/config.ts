@@ -32,16 +32,33 @@ export type LedgerBackend = "sheets" | "csv";
 export type PaystackMode = "live" | "mock";
 
 function env(key: string): string | undefined {
-  const value = process.env[key];
-  return value && value.trim() !== "" ? value.trim() : undefined;
+  let value = process.env[key];
+  if (!value || value.trim() === "") return undefined;
+  value = value.trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1).trim();
+  }
+  return value !== "" ? value : undefined;
 }
 
 /**
  * Google ships service-account private keys with real newlines. Env vars and
  * dashboards usually carry them as the two characters \n, so put them back.
+ * Also strip any accidental surrounding quotes.
  */
 function normalisePrivateKey(key: string | undefined): string | undefined {
-  return key?.replace(/\\n/g, "\n");
+  if (!key) return undefined;
+  let clean = key.trim();
+  if (
+    (clean.startsWith('"') && clean.endsWith('"')) ||
+    (clean.startsWith("'") && clean.endsWith("'"))
+  ) {
+    clean = clean.slice(1, -1).trim();
+  }
+  return clean.replace(/\\n/g, "\n");
 }
 
 const ledgerBackend: LedgerBackend =

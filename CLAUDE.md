@@ -105,6 +105,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 - **The PIN never leaves the ledger layer.** `Ledger.authenticate(code, pin)` compares it internally and returns the person or a reason; there is no getter for a PIN anywhere, and `senderView` carries neither PIN nor phone. Anything the model can see, it can repeat into the chat.
 - **Invoice ids normalised on the digits**, so "104", "inv 104" and "INV-104" all resolve.
 - **Explicit `0.0.0.0` binding on `app.listen`.** Render's reverse proxy routes traffic to container IPv4 (`10.x.x.x`); without specifying `0.0.0.0`, Node defaults to IPv6 `::` on Linux containers, returning 502 Bad Gateway to the load balancer.
+- **Surrounding quotes stripped on env vars and private keys; 5s timeout on health check.** Dashboard inputs often retain quotes copied from `.env`; health check bounds external Google Sheets API calls to 5s and logs failures to `console.error`.
 
 ### Identity: account code + PIN (rebuilt 22 Oct — built)
 

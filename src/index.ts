@@ -55,11 +55,15 @@ app.get(["/", "/health"], async (_req: Request, res: Response) => {
   let ledgerStatus = "unknown";
   let ledgerError: string | undefined;
   try {
-    await getLedger().healthCheck();
+    const healthTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Ledger healthCheck timed out after 5000ms")), 5000),
+    );
+    await Promise.race([getLedger().healthCheck(), healthTimeout]);
     ledgerStatus = "ok";
   } catch (error) {
     ledgerStatus = "error";
     ledgerError = error instanceof Error ? error.message : String(error);
+    console.error("Health check error:", ledgerError);
   }
 
   const healthy = ledgerStatus === "ok" && problems.length === 0;

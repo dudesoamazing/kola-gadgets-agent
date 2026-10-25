@@ -177,11 +177,18 @@ Status is derived, not stored: paid = amount_paid ≥ amount.
 
 Ownership is by account — see "Identity: account code + PIN" above. Codes and PINs are the only credentials in the system, so the Sheet is as sensitive as a password file: keep it private to Kola and the service account.
 
-### Hosting
+### Hosting — live
 
-Render or Railway, public HTTPS. `render.yaml` is ready — free web service, health check on `/health`, secrets set in the dashboard (`sync: false`). Free tiers sleep, so a cold start can make Chord time out on the first call. Keep it awake or log it as a field note.
+**`https://kola-gadgets-mcp.onrender.com`** — free Render web service from `render.yaml`, health check on `/health`, secrets in the dashboard (`sync: false`). Free tiers sleep, so a cold start can make Chord time out on the first call. Keep it awake or log it as a field note.
 
-Register in Chord as: transport **Streamable HTTP**, URL `https://kola-gadgets-mcp.onrender.com/mcp`, auth **bearer**, token from Render dashboard `MCP_BEARER_TOKEN`. Local dev uses `kola-local-dev-token` in `.env`.
+Register in Chord as: transport **Streamable HTTP**, URL `https://kola-gadgets-mcp.onrender.com/mcp`, auth **bearer**, token from the Render dashboard's `MCP_BEARER_TOKEN` — a 64-char random hex, swapped in on 25 Oct. The first deploy went out with `kola-local-dev-token`, a guessable dev placeholder guarding a public URL that can issue payment links and release stock. Don't put a dev token on a production service.
+
+Two deployment problems, both real and both fixed (see field notes):
+
+- **Bind to `0.0.0.0`,** not the default. Render's proxy can't route to a service listening on localhost, and it fails silently — the build succeeds and nothing answers.
+- **No quotes around values in the Render dashboard.** A local `.env` parser strips them; `process.env` in a container does not, so a quoted `GOOGLE_PRIVATE_KEY` reached OpenSSL with `"` as its first character and threw `DECODER routines::unsupported`. `config.ts` now strips surrounding quotes from every variable as belt and braces, but don't paste them.
+
+**Verified live (25 Oct)** with the production token: `/health` ok on the Sheets backend, all eight tools over `tools/list`, 401 with no token *and* with the old one, `identify` and balances reading the real Sheet, a wrong PIN refused, staff refused a pickup code, and `create_payment_link` returning a real `checkout.paystack.com` link — which also proves Render's egress to Paystack works. Ledger reset to demo numbers afterwards.
 
 Our `/health` returns **503** when the ledger or config is broken and lists the problems — the opposite of Chord's probe, which returns 200 either way. Don't confuse the two when debugging.
 
@@ -212,7 +219,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] GitHub repo — pushed to https://github.com/dudesoamazing/kola-gadgets-agent (`main`)
 - [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all eight tools over real MCP HTTP, 110 assertions
 - [x] README drafted (`README.md`) — how to run, the eight tools, how AI tools were used
-- [x] Deploy to public HTTPS — live on Render (https://kola-gadgets-mcp.onrender.com); `/health` reports `ok` on Sheets backend; `tools/list` verified over HTTPS with bearer auth
+- [x] Deploy to public HTTPS — live on Render (`https://kola-gadgets-mcp.onrender.com`); verified from outside end to end on 25 Oct: `/health` ok on the Sheets backend, all eight tools, bearer auth enforced, real Sheet reads, and a real Paystack link created from Render. Production token swapped off the dev placeholder
 - [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
 - [x] Multiple phones per reseller account — solved outright by dropping phone identity on 22 Oct; a code works from any device
 - [x] `verify_payment` refuses a reference from another account; staff and the owner may verify any

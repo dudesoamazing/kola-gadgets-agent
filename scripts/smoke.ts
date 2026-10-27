@@ -14,6 +14,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { normalisePickupCode } from "../src/lib/format.js";
+import { PICKUP_WORDS } from "../src/lib/wordlist.js";
 
 const TOKEN = "smoke-test-token";
 
@@ -653,6 +654,23 @@ async function main(): Promise<void> {
         normalisePickupCode("MANGOTIGER") === normalisePickupCode("mango-tiger") &&
         normalisePickupCode("418 637") === "418637",
     );
+
+    const BLOCKED_PICKUP_WORDS = [
+      "SCAM", "THEFT", "ARREST", "POLICE", "POISON", "VIRUS", "AIDS", "AGONY",
+      "GRIEF", "DECAY", "ANGER", "UNPAID", "DEBIT", "CREDIT", "CASH", "PAYING",
+      "VOID", "CANCEL", "ERROR", "FALSE", "EMPTY", "GONE", "BROKEN",
+    ];
+    const foundBlockedWords = PICKUP_WORDS.filter((w) => BLOCKED_PICKUP_WORDS.includes(w));
+    check("pickup word list contains no blocked words", foundBlockedWords.length === 0, foundBlockedWords);
+    check("pickup word list has at least 1,500 words", PICKUP_WORDS.length >= 1500, PICKUP_WORDS.length);
+    check(
+      "pickup word list contains MANGO, TIGER, RIVER, PILLOW",
+      PICKUP_WORDS.includes("MANGO") &&
+        PICKUP_WORDS.includes("TIGER") &&
+        PICKUP_WORDS.includes("RIVER") &&
+        PICKUP_WORDS.includes("PILLOW"),
+    );
+    check("all pickup words are 3 to 6 uppercase letters", PICKUP_WORDS.every((w) => /^[A-Z]{3,6}$/.test(w)));
 
     const spentCode = await call("get_pickup_codes", { ...ADA });
     check(

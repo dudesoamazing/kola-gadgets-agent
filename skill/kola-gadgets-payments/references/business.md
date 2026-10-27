@@ -38,7 +38,7 @@ An invoice may only move to "paid" through a verified Paystack payment. It may o
 
 | Setting | Value |
 | --- | --- |
-| Length | 6 digits |
+| Format | Two uppercase words separated by a hyphen, e.g. `MANGO-TIGER` (or legacy 6 digits) |
 | Issued | By `verify_payment`, the moment a payment clears an invoice in full |
 | Issued for a part payment | Never |
 | Uses | One. Spent as soon as staff release the goods |

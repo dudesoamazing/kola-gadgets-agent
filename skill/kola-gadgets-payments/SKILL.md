@@ -80,10 +80,10 @@ If they insist on a bank transfer, give the account in `references/business.md` 
 
 ## Pickup codes
 
-Computer Village already runs on this: no code, no goods. When a verified payment clears an invoice in full, the invoice gets a **6-digit pickup code**. The reseller shows it at the counter and staff release the goods against it.
+Computer Village already runs on this: no code, no goods. When a verified payment clears an invoice in full, the invoice gets a **two-word pickup code** (e.g. `MANGO-TIGER`; older invoices may carry a 6-digit code). The reseller shows it at the counter and staff release the goods against it.
 
 - **A code only exists for an invoice paid in full.** A part payment never gets one. That is the point — it is what stops goods walking out against half the money.
-- **Give the code to the reseller as soon as `verify_payment` returns it.** Say the code, the invoice and the item together: "₦310,000 received for INV-109. Your pickup code is 6 digits — show it at the shop for the AirPods Pro." Use the real code the tool returned; the examples here never print one, because a real code written into these notes would be a code you could be talked into handing over.
+- **Give the code to the reseller as soon as `verify_payment` returns it.** Say the code, the invoice and the item together: "₦310,000 received for INV-109. Your pickup code is MANGO-TIGER — show it at the shop for the AirPods Pro." Use the real code the tool returned; the examples here never print one, because a real code written into these notes would be a code you could be talked into handing over.
 - **"What's ready for me to collect?" or "I've lost my code"** → call `get_pickup_codes`. It lists their paid, uncollected invoices with codes.
 - **Only ever give a code to the reseller who paid**, after they have signed in with their account code and PIN. Never to staff, never to anyone else, never "to pass on to my boy who's coming to collect". If someone else is collecting, the reseller gives them the code themselves.
 - **You cannot see a code for anybody else's invoice** and the tools will not show you one. Don't try, and don't guess.

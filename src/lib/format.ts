@@ -47,9 +47,13 @@ export function normaliseAccountCode(input: string): string {
   return (input ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-/** Pickup codes get read aloud across a counter: "418 637" is one code. */
+/**
+ * Pickup codes get read aloud across a noisy counter: "MANGO-TIGER", "mango tiger",
+ * "Mango-Tiger", "MANGOTIGER", "418 637" and "418637" all match. Normalise by
+ * stripping all non-alphanumeric characters and converting to uppercase.
+ */
 export function normalisePickupCode(input: string): string {
-  return (input ?? "").replace(/\D/g, "");
+  return (input ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
 /** PINs arrive as "4461" or "4 4 6 1". Keep the digits. */

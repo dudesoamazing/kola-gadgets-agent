@@ -35,8 +35,8 @@ export interface Invoice {
   /** The reseller account that owes this, e.g. "ACC-ADA". */
   account_id: string;
   /**
-   * Six digits the reseller shows at the counter. Issued only when a
-   * verified payment settles the invoice in full, and spent the moment staff
+   * Two words (e.g. "MANGO-TIGER", or legacy 6 digits) the reseller shows at the counter.
+   * Issued only when a verified payment settles the invoice in full, and spent the moment staff
    * use it. Blank until then — and never shown to staff by any tool.
    *
    * This is how Computer Village already works: no code, no goods.

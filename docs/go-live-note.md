@@ -7,7 +7,7 @@ Kola, this answers your WhatsApp line for one job: keeping payments and pickups 
 - When a reseller asks for your account details, it sends a payment link for those exact invoices instead — so the money arrives already matched to the goods.
 - It confirms payments with Paystack itself. Screenshots and "I've sent it" don't count.
 - Your staff can ask "has INV-112 been paid?" and get a straight answer while you're away.
-- **Once an invoice is fully paid, the reseller gets a 6-digit pickup code.** Staff release only when that code matches. No code, no goods. Part payments go to the oldest invoice first and never produce a code, so half-paid stock can't leave.
+- **Once an invoice is fully paid, the reseller gets a two-word pickup code (e.g. MANGO-TIGER).** Staff release only when that code matches. No code, no goods. Part payments go to the oldest invoice first and never produce a code, so half-paid stock can't leave.
 - It asks for an account code and PIN first, because WhatsApp doesn't tell it who is messaging. One upside: a reseller can message from any phone and still see their balance.
 
 **What it won't do**

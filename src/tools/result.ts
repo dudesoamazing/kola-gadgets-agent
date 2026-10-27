@@ -44,6 +44,7 @@ function safeErrorSnippet(error: string, rawMessage?: unknown): string {
   }
   let clean = rawMessage
     .replace(/\bKG-\d{8}-[A-Za-z0-9]+\b/gi, "[ref]")
+    .replace(/\b(?!ACC|INV|REF)[A-Z]{3,6}-[A-Z]{3,6}\b/g, "[code]")
     .replace(/\b\d{6}\b/g, "[code]")
     .replace(/\b\d{4}\b/g, "[pin]")
     .replace(/\b[0-9]{11}\b/g, "[phone]")

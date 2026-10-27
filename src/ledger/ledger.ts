@@ -106,7 +106,7 @@ export class TableLedger implements Ledger {
     return rows.map((row) => ({
       invoice_id: cell(row, header, "invoice_id"),
       account_id: cell(row, header, "account_id").toUpperCase(),
-      pickup_code: normalisePickupCode(optionalCell(row, header, "pickup_code")),
+      pickup_code: optionalCell(row, header, "pickup_code").trim().toUpperCase(),
       items: cell(row, header, "items"),
       amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
       amount_paid_ngn: parseAmount(cell(row, header, "amount_paid_ngn")),
@@ -136,7 +136,9 @@ export class TableLedger implements Ledger {
     // A collected invoice keeps its code for the audit trail, so match on the
     // code alone and let the caller refuse on the collected flag. Two rows
     // sharing a code would be a seeding mistake; prefer the uncollected one.
-    const matches = invoices.filter((invoice) => invoice.pickup_code === wanted);
+    const matches = invoices.filter(
+      (invoice) => normalisePickupCode(invoice.pickup_code) === wanted,
+    );
     return matches.find((invoice) => !invoice.collected) ?? matches[0];
   }
 

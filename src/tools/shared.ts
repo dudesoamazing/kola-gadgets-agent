@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { config } from "../config.js";
-import { naira } from "../lib/format.js";
+import { naira, normalisePickupCode } from "../lib/format.js";
+import { PICKUP_WORDS } from "../lib/wordlist.js";
 import { derivedStatus, outstandingNgn, type Invoice, type Person } from "../ledger/index.js";
 
 /** The invoice shape the agent sees. Pre-formatted amounts stop it doing maths. */
@@ -95,27 +96,40 @@ export function creditSummary(invoices: Invoice[]) {
 }
 
 /**
- * A six-digit pickup code, unique among the codes still live in the ledger.
+ * A two-word pickup code (e.g. MANGO-TIGER), unique among the codes still live in the ledger.
  *
- * `randomInt` rather than `Math.random`: this is the only thing standing
- * between a stranger at the counter and a ₦2.4m laptop, so it should not be
- * predictable from an earlier code.
+ * Drawn from a curated list of ~2,000 short, unambiguous English words using `randomInt`
+ * for ~4 million combinations. Stronger than 6 digits, while one word would be guessable.
+ * Read aloud easily across a noisy counter without ambiguity.
  */
 export function newPickupCode(takenCodes: Set<string>): string {
   for (let attempt = 0; attempt < 50; attempt++) {
-    const code = String(randomInt(100_000, 1_000_000));
-    if (!takenCodes.has(code)) return code;
+    const idx1 = randomInt(0, PICKUP_WORDS.length);
+    let idx2 = randomInt(0, PICKUP_WORDS.length);
+    while (idx2 === idx1) {
+      idx2 = randomInt(0, PICKUP_WORDS.length);
+    }
+    const code = `${PICKUP_WORDS[idx1]}-${PICKUP_WORDS[idx2]}`;
+    const norm = normalisePickupCode(code);
+    if (!takenCodes.has(code) && !takenCodes.has(norm)) {
+      return code;
+    }
   }
-  // 50 collisions against a six-digit space means something is very wrong —
+  // 50 collisions against a 4-million combination space means something is very wrong —
   // better to fail loudly than hand out a code that is already in use.
   throw new Error("Could not find an unused pickup code after 50 attempts.");
 }
 
 /** Codes that must not be reissued: anything not yet collected. */
 export function liveCodes(invoices: Invoice[]): Set<string> {
-  return new Set(
-    invoices.filter((invoice) => !invoice.collected && invoice.pickup_code !== "").map((i) => i.pickup_code),
-  );
+  const codes = new Set<string>();
+  for (const inv of invoices) {
+    if (!inv.collected && inv.pickup_code !== "") {
+      codes.add(inv.pickup_code);
+      codes.add(normalisePickupCode(inv.pickup_code));
+    }
+  }
+  return codes;
 }
 
 /**

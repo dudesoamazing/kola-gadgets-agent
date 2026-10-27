@@ -194,4 +194,7 @@ Not Chord problems, so not candidates for the final field notes. Kept here for t
   3. Updated `SKILL.md` under "I've paid" instructing the agent that earlier credit collections need no pickup code, never to flag invoices merely because they lack a code when collected, and never to report a balance unchanged after a successful payment.
 - **Lesson (tool design):** When an entity enters a valid terminal state that omits an expected downstream field (like a pickup code on an already-collected invoice), do not leave the omission implicit. If a tool result requires the model to guess whether a missing field is normal or an error, the model will guess wrong—and in this case, a wrong guess would have cost ₦4.05M in duplicate stock releases. Return explicit state flags, an explanatory note, and a ready reply summary (`summary_for_reply`).
 
+### Pickup codes changed from 6 digits to two words (e.g. MANGO-TIGER)
+- **Why words, and why two of them:** Codes are read aloud across a noisy counter and passed to dispatch riders (where Computer Village already uses word codes), and two words from a curated list of ~2,000 words yield ~4 million combinations (stronger than 6 digits), whereas one word would be easily guessable.
+
 

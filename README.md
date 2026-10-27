@@ -26,7 +26,7 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | `check_invoice_status` | staff, owner, and the reseller it belongs to | Amount, amount paid, outstanding, collected when and by whom |
 | `create_payment_link` | reseller | Validates the invoices are theirs, creates a Paystack link, logs it as pending |
 | `verify_payment` | the account it belongs to, plus staff and owner | Asks Paystack what really happened and applies the money, oldest invoice first |
-| `get_pickup_codes` | reseller | Their paid, uncollected invoices with each 6-digit pickup code |
+| `get_pickup_codes` | reseller | Their paid, uncollected invoices with each two-word pickup code |
 | `record_handover` | staff, owner | Releases goods against a pickup code — names the item, marks it collected, spends the code |
 | `flag_for_owner` | anyone | Adds a line to the Flags tab for Kola to look at |
 
@@ -35,7 +35,7 @@ Three rules the code enforces, not just the prompt:
 - **Only `verify_payment` can mark an invoice paid.** Nothing else writes `amount_paid_ngn`. No one can talk their way into it — not staff, not someone claiming to be staff.
 - **Verifying the same reference twice never applies the money twice.** The payment row is the record; once it reads `success` with a timestamp, a repeat call reports the existing confirmation instead. Simultaneous calls are serialised per reference.
 - **Roles come from the ledger's People tab.** Never from what someone says in the chat.
-- **No code, no goods.** A verified payment that clears an invoice in full mints a unique 6-digit pickup code; staff release only against it. **No tool ever shows a code to staff** — `invoiceView` has no such field, and `get_pickup_codes` returns one only to the reseller who paid. Three wrong codes lock handovers from that staff account and flag the owner. Copied from how Computer Village already works, so nobody at the counter has to be retrained.
+- **No code, no goods.** A verified payment that clears an invoice in full mints a unique two-word pickup code (e.g. `MANGO-TIGER`; older invoices may carry 6 digits); staff release only against it. **No tool ever shows a code to staff** — `invoiceView` has no such field, and `get_pickup_codes` returns one only to the reseller who paid. Three wrong codes lock handovers from that staff account and flag the owner. Copied from how Computer Village already works, so nobody at the counter has to be retrained.
 - **Identity is proven, not inferred.** Chord passes no sender identity to a teammate or its tools — no phone number, nothing (confirmed by TSG, 22 Oct). So every person has an owner-issued account code and a 4-digit PIN, and **every tool re-checks both on every call**; there is no session, because there is no handle to key one on. An unknown code and a wrong PIN return the same message, so the agent can't be used to find out which codes are live. The PIN never leaves the ledger layer and never reaches the model.
 
 Every tool returns readable JSON with an `ok` flag, and failures come back as codes the skill has wording for (`not_permitted`, `not_found`, `paystack_unreachable`, `not_fully_paid`…) rather than as exceptions. An error Chord can't read is an error the agent will improvise around.

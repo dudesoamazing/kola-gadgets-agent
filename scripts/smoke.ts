@@ -13,6 +13,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { normalisePickupCode } from "../src/lib/format.js";
 
 const TOKEN = "smoke-test-token";
 
@@ -361,10 +362,10 @@ async function main(): Promise<void> {
       inv104Applied?.pickup_code,
     );
     check(
-      "INV-109 was uncollected so collected is false and receives a 6-digit pickup code",
+      "INV-109 was uncollected so collected is false and receives a two-word pickup code",
       inv109Applied?.collected === false &&
         typeof inv109Applied?.pickup_code === "string" &&
-        /^\d{6}$/.test(inv109Applied.pickup_code),
+        /^[A-Z]{3,6}-[A-Z]{3,6}$/.test(inv109Applied.pickup_code),
       inv109Applied,
     );
     check(
@@ -573,7 +574,7 @@ async function main(): Promise<void> {
     // should have minted it a code.
     const adaCodes = await call("get_pickup_codes", { ...ADA });
     const inv109 = (adaCodes.ready_to_collect ?? []).find((i: Json) => i.invoice_id === "INV-109");
-    check("a settled invoice has a pickup code", /^\d{6}$/.test(String(inv109?.pickup_code)), adaCodes);
+    check("a settled invoice has a pickup code", /^[A-Z]{3,6}-[A-Z]{3,6}$/.test(String(inv109?.pickup_code)), adaCodes);
     check(
       "the part-paid INV-107 is not listed as ready",
       !(adaCodes.ready_to_collect ?? []).some((i: Json) => i.invoice_id === "INV-107"),
@@ -585,7 +586,7 @@ async function main(): Promise<void> {
     // has a code now too — and every issued code must be distinct.
     const emekaCodes = await call("get_pickup_codes", { ...EMEKA });
     const inv112 = (emekaCodes.ready_to_collect ?? []).find((i: Json) => i.invoice_id === "INV-112");
-    check("INV-112 got its own code once it was settled", /^\d{6}$/.test(String(inv112?.pickup_code)), emekaCodes);
+    check("INV-112 got its own code once it was settled", /^[A-Z]{3,6}-[A-Z]{3,6}$/.test(String(inv112?.pickup_code)), emekaCodes);
     check("no two invoices share a code", inv112?.pickup_code !== inv109?.pickup_code, {
       inv112: inv112?.pickup_code,
       inv109: inv109?.pickup_code,
@@ -628,8 +629,17 @@ async function main(): Promise<void> {
     const reused = await call("record_handover", { ...STAFF, pickup_code: "418637" });
     check("a code works exactly once", reused.error === "already_collected", reused);
 
-    const release = await call("record_handover", { ...STAFF, pickup_code: adaCode });
-    check("Ada's code releases INV-109", release.ok === true && release.invoice_id === "INV-109", release);
+    // Release Ada's item now using lowercase with a space to test normalisation
+    const spacedAdaCode = adaCode.toLowerCase().replace("-", " ");
+    const release = await call("record_handover", { ...STAFF, pickup_code: spacedAdaCode });
+    check("Ada's code releases INV-109 even in lowercase with space", release.ok === true && release.invoice_id === "INV-109", release);
+
+    check(
+      "normalisePickupCode matches hyphenated, spaced, lowercase, and seamless",
+      normalisePickupCode("mango tiger") === normalisePickupCode("Mango-Tiger") &&
+        normalisePickupCode("MANGOTIGER") === normalisePickupCode("mango-tiger") &&
+        normalisePickupCode("418 637") === "418637",
+    );
 
     const spentCode = await call("get_pickup_codes", { ...ADA });
     check(

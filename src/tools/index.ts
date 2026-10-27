@@ -915,7 +915,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         pickup_code: z
           .string()
           .min(4)
-          .describe("The six digits the reseller read out. Spaces are ignored."),
+          .describe("The two words the reseller read out (e.g. MANGO-TIGER), or an older 6-digit code. Spaces, hyphens, and case are ignored."),
       },
     },
     async ({ account_code, pin, pickup_code }) =>

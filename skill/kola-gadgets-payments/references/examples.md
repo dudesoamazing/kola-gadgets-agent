@@ -28,7 +28,10 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 > Reseller: done
 > Agent: Confirmed — ₦2,710,000 received, ref [reference].
 > - INV-104 (2x iPhone 15 Pro): settled, collected earlier.
-> - INV-109 (AirPods Pro): paid, pickup code [two words, e.g. MANGO-TIGER] for AirPods Pro.
+> - INV-109 (AirPods Pro): paid. Pickup code for collection:
+> 
+> *[two words, e.g. MANGO-TIGER]*
+> 
 > Total outstanding balance is now ₦1,650,000 on INV-107.
 
 ## Asking for account details
@@ -91,7 +94,11 @@ This mentions "account" but is not a request to pay. It is a claim of payment.
 ## Reseller has lost their code
 
 > Reseller: I've paid but I can't find the code
-> Agent: No problem. INV-110, Samsung Galaxy S24 Ultra — your pickup code is [two words, e.g. MANGO-TIGER]. Show that at the shop.
+> Agent: No problem. Your pickup code for INV-110 (Samsung Galaxy S24 Ultra) is:
+> 
+> *[two words, e.g. MANGO-TIGER]*
+> 
+> Show that at the shop to collect.
 
 ## Part payment, so no code
 

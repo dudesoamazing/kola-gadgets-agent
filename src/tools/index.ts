@@ -481,7 +481,9 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         if (isCollected) {
           lines.push(`- ${invId} (${invItems}): settled, collected earlier.`);
         } else if (code) {
-          lines.push(`- ${invId} (${invItems}): paid, pickup code ${code} for ${invItems}.`);
+          lines.push(
+            `- ${invId} (${invItems}): paid. Your pickup code is:\n\n*${code}*\n`,
+          );
         } else {
           lines.push(`- ${invId} (${invItems}): settled in full.`);
         }
@@ -679,7 +681,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
               applied_to: appliedList,
               unallocated_ngn: unallocatedNgn,
               flagged_for_owner: unallocatedNgn > 0,
-              note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Invoices marked collected: true were already collected on credit and need no pickup code. A part-paid invoice has no code and must not be collected.",
+              note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code on its own line with an enter space above and below so it is easily read, and tell them to show it at the shop. Invoices marked collected: true were already collected on credit and need no pickup code. A part-paid invoice has no code and must not be collected.",
             };
           });
         };
@@ -899,7 +901,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             // Do not invent one: only a verified payment mints a code.
             needs_code_from_owner: invoice.pickup_code === "",
           })),
-          note: "Give each code with its invoice and item, and tell them to show it at the shop. Anything marked needs_code_from_owner has no code yet — tell them Kola will sort it out and flag it for him.",
+          note: "Give each code with its invoice and item, placing each pickup code on its own line with an enter space above and below so it is easily read. Tell them to show it at the shop. Anything marked needs_code_from_owner has no code yet — tell them Kola will sort it out and flag it for him.",
         });
       }),
   );

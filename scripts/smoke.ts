@@ -662,6 +662,8 @@ async function main(): Promise<void> {
     ];
     const foundBlockedWords = PICKUP_WORDS.filter((w) => BLOCKED_PICKUP_WORDS.includes(w));
     check("pickup word list contains no blocked words", foundBlockedWords.length === 0, foundBlockedWords);
+    check("pickup word list contains no generic words like ITEM", !PICKUP_WORDS.includes("ITEM"));
+    check("pickup word list contains no obscure words like FAWN", !PICKUP_WORDS.includes("FAWN"));
     check("pickup word list has at least 1,500 words", PICKUP_WORDS.length >= 1500, PICKUP_WORDS.length);
     check(
       "pickup word list contains MANGO, TIGER, RIVER, PILLOW",

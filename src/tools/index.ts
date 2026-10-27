@@ -13,6 +13,7 @@ import {
   outstandingNgn,
   type Invoice,
   type Ledger,
+  type Payment,
   type Person,
 } from "../ledger/index.js";
 import {
@@ -31,6 +32,7 @@ import {
   newPickupCode,
   newReference,
   senderView,
+  type InvoiceView,
 } from "./shared.js";
 
 /**
@@ -451,39 +453,199 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           expires_in_hours: config.paystack.linkExpiryHours,
           paystack_mode: config.paystack.mode,
           next_step:
-            "Send the link with the amount and invoice numbers. Ask them to tell you once they have paid, then call verify_payment with this reference. Nothing is paid until that returns success.",
+            "Send the link with the amount and invoice numbers. Ask them to tell you once they have paid, then call verify_payment (the reference is optional). Nothing is paid until that returns success.",
         });
       }),
   );
 
+  // --------------------------------------------------------------- verify ---
   // --------------------------------------------------------------- verify ---
   server.registerTool(
     "verify_payment",
     {
       title: "Verify a payment",
       description:
-        "Ask Paystack whether a payment reference actually completed, and if it did, apply the money to the invoices it was raised for — oldest first. This is the only thing that can mark an invoice paid. Pass the sender's number: a reseller may only verify their own account's payments, while staff and the owner may verify any. Safe to call repeatedly: a reference already applied is reported, never applied twice.",
+        "Ask Paystack whether a payment actually completed, and if it did, apply the money to the invoices it was raised for — oldest first. This is the only thing that can mark an invoice paid. The reference is optional: if omitted, the server checks all pending payments for this account, newest first. A reseller may only verify their own account's payments, while staff and the owner may verify any. Safe to call repeatedly: payments already applied are reported, never applied twice.",
       inputSchema: {
         account_code: accountCodeArg,
         pin: pinArg,
         reference: z
           .string()
           .min(4)
-          .describe("The payment reference returned by create_payment_link, e.g. KG-20261020-7F3K2A."),
+          .optional()
+          .describe(
+            "Optional payment reference returned by create_payment_link, e.g. KG-20261020-7F3K2A. If omitted, the server checks all pending payments for this account, newest first.",
+          ),
       },
     },
     async ({ account_code, pin, reference }) =>
-      guard("verify_payment", () =>
-        withReferenceLock(reference, async () => {
-          const db = ledger();
-          const sender = await authenticated(db, account_code, pin);
-          if ("error" in sender) return sender.error;
-          const { person } = sender;
+      guard("verify_payment", async () => {
+        const db = ledger();
+        const sender = await authenticated(db, account_code, pin);
+        if ("error" in sender) return sender.error;
+        const { person } = sender;
 
+        type SingleResult = {
+          reference: string;
+          payment_status: "success" | "pending" | "failed" | "abandoned" | "reversed" | "not_found" | "unreachable";
+          applied: boolean;
+          already_applied: boolean;
+          applied_at?: string;
+          amount_ngn: number;
+          amount_display: string;
+          paid_at?: string;
+          channel?: string;
+          invoices?: Array<InvoiceView | Record<string, unknown>>;
+          applied_to?: Array<Record<string, unknown>>;
+          unallocated_ngn?: number;
+          flagged_for_owner?: boolean;
+          payment_link?: string;
+          gateway_response?: string;
+          error?: string;
+          note: string;
+        };
+
+        const verifySingle = async (payment: Payment): Promise<SingleResult> => {
+          return withReferenceLock(payment.reference, async () => {
+            const fresh = (await db.findPayment(payment.reference)) ?? payment;
+
+            const invoicesFor = async () => {
+              const found: Invoice[] = [];
+              for (const id of fresh.invoice_ids) {
+                const invoice = await db.findInvoice(id);
+                if (invoice) found.push(invoice);
+              }
+              return found.sort((a, b) => a.created_at.localeCompare(b.created_at));
+            };
+
+            // Already applied — report it and stop. This is the double-apply guard.
+            if (fresh.status === "success" && fresh.verified_at) {
+              const invoices = await invoicesFor();
+              return {
+                reference: fresh.reference,
+                payment_status: "success",
+                applied: false,
+                already_applied: true,
+                applied_at: fresh.verified_at,
+                amount_ngn: fresh.amount_ngn,
+                amount_display: naira(fresh.amount_ngn),
+                invoices: invoices.map(invoiceView),
+                note: "This payment was already confirmed and applied. Report the existing confirmation. Do not apply it again.",
+              };
+            }
+
+            let result;
+            try {
+              result = await verifyTransaction(fresh.reference);
+            } catch (error) {
+              if (error instanceof PaystackUnreachableError) {
+                return {
+                  reference: fresh.reference,
+                  payment_status: "unreachable",
+                  applied: false,
+                  already_applied: false,
+                  amount_ngn: fresh.amount_ngn,
+                  amount_display: naira(fresh.amount_ngn),
+                  error: error.message,
+                  note: `Could not check that payment. Nothing has changed on the account: ${error.message}`,
+                };
+              }
+              throw error;
+            }
+
+            // Not a success: record the status, change no balances.
+            if (result.status !== "success") {
+              if (result.status !== "pending" && fresh.status !== result.status) {
+                const recordable = result.status === "failed" ? result.status : undefined;
+                if (recordable) await db.updatePayment(fresh.reference, { status: recordable });
+              }
+              const invoices = await invoicesFor();
+              return {
+                reference: fresh.reference,
+                payment_status: result.status,
+                applied: false,
+                already_applied: false,
+                amount_ngn: fresh.amount_ngn,
+                amount_display: naira(fresh.amount_ngn),
+                invoices: invoices.map(invoiceView),
+                payment_link: fresh.link,
+                note:
+                  result.status === "not_found" || result.status === "abandoned" || result.status === "pending"
+                    ? "No completed payment on this link yet. Nothing was charged. Offer to check again shortly or send a fresh link."
+                    : "This payment did not go through and nothing was charged. Offer a fresh link.",
+                gateway_response: result.gatewayResponse,
+              };
+            }
+
+            // Success. Paystack is the authority on how much was actually paid.
+            const paidNgn = result.amountNgn > 0 ? result.amountNgn : fresh.amount_ngn;
+            const invoices = await invoicesFor();
+            const { allocations, unallocatedNgn } = allocateOldestFirst(paidNgn, invoices);
+
+            const taken = liveCodes(await db.listInvoices());
+            const appliedList: Array<Record<string, unknown>> = [];
+
+            for (const { invoice, appliedNgn } of allocations) {
+              const newPaid = invoice.amount_paid_ngn + appliedNgn;
+              const nowOutstanding = Math.max(0, invoice.amount_ngn - newPaid);
+              const settledNow = nowOutstanding === 0;
+
+              const issueCode = settledNow && !invoice.collected && invoice.pickup_code === "";
+              const pickupCode = issueCode ? newPickupCode(taken) : invoice.pickup_code;
+              if (issueCode) taken.add(pickupCode);
+
+              await db.updateInvoice(invoice.invoice_id, {
+                amount_paid_ngn: newPaid,
+                ...(issueCode ? { pickup_code: pickupCode } : {}),
+              });
+
+              appliedList.push({
+                invoice_id: invoice.invoice_id,
+                items: invoice.items,
+                applied_ngn: appliedNgn,
+                applied_display: naira(appliedNgn),
+                now_status: settledNow ? "paid" : "part_paid",
+                outstanding_ngn: nowOutstanding,
+                outstanding_display: naira(nowOutstanding),
+                safe_to_release: settledNow && !invoice.collected,
+                ...(settledNow && !invoice.collected && pickupCode !== ""
+                  ? { pickup_code: pickupCode }
+                  : {}),
+              });
+            }
+
+            const verifiedAt = lagosTimestamp();
+            await db.updatePayment(fresh.reference, { status: "success", verified_at: verifiedAt });
+
+            if (unallocatedNgn > 0) {
+              await db.appendFlag({
+                created_at: verifiedAt,
+                account_code: person.account_code,
+                invoice_id: fresh.invoice_ids.join(","),
+                summary: `${naira(unallocatedNgn)} of payment ${fresh.reference} could not be applied — the invoices it covers were already settled. Needs a refund or credit decision.`,
+              });
+            }
+
+            return {
+              reference: fresh.reference,
+              payment_status: "success",
+              applied: true,
+              already_applied: false,
+              amount_ngn: paidNgn,
+              amount_display: naira(paidNgn),
+              paid_at: result.paidAt,
+              channel: result.channel,
+              applied_to: appliedList,
+              unallocated_ngn: unallocatedNgn,
+              flagged_for_owner: unallocatedNgn > 0,
+              note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Nothing is released without it. A part-paid invoice has no code and must not be collected.",
+            };
+          });
+        };
+
+        // Case 1: Specific reference provided
+        if (reference && reference.trim() !== "") {
           const payment = await db.findPayment(reference);
-
-          // We only verify references we issued. An unknown one means the
-          // agent invented it or the reseller paid some other way.
           if (!payment) {
             return fail(
               "not_found",
@@ -492,9 +654,6 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             );
           }
 
-          // A reference is a bearer token if anyone holding it can read the
-          // payment. Resellers may only verify their own account's payments;
-          // staff and the owner may verify any, so they can settle a dispute.
           if (person.role === "reseller" && payment.account_id !== person.account_id) {
             return fail(
               "not_permitted",
@@ -503,150 +662,120 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
             );
           }
 
-          const invoicesFor = async () => {
-            const found: Invoice[] = [];
-            for (const id of payment.invoice_ids) {
-              const invoice = await db.findInvoice(id);
-              if (invoice) found.push(invoice);
-            }
-            return found.sort((a, b) => a.created_at.localeCompare(b.created_at));
-          };
-
-          // Already applied — report it and stop. This is the double-apply guard.
-          if (payment.status === "success" && payment.verified_at) {
-            const invoices = await invoicesFor();
-            return ok({
-              reference: payment.reference,
-              payment_status: "success",
-              already_applied: true,
-              applied_at: payment.verified_at,
-              amount_ngn: payment.amount_ngn,
-              amount_display: naira(payment.amount_ngn),
-              invoices: invoices.map(invoiceView),
-              note: "This payment was already confirmed and applied. Report the existing confirmation. Do not apply it again.",
-            });
-          }
-
-          let result;
-          try {
-            result = await verifyTransaction(payment.reference);
-          } catch (error) {
-            if (error instanceof PaystackUnreachableError) {
-              return fail(
-                "paystack_unreachable",
-                `Could not check that payment. Nothing has changed on the account — say so and offer to try again in a minute. ${error.message}`,
-                { reference: payment.reference, detail: error.detail },
-              );
-            }
-            throw error;
-          }
-
-          // Not a success: record the status, change no balances.
-          if (result.status !== "success") {
-            if (result.status !== "pending" && payment.status !== result.status) {
-              const recordable =
-                result.status === "failed" || result.status === "abandoned" ? result.status : undefined;
-              if (recordable) await db.updatePayment(payment.reference, { status: recordable });
-            }
-            const invoices = await invoicesFor();
-            return ok({
-              reference: payment.reference,
-              payment_status: result.status,
-              applied: false,
-              amount_ngn: payment.amount_ngn,
-              amount_display: naira(payment.amount_ngn),
-              invoices: invoices.map(invoiceView),
-              payment_link: payment.link,
-              note:
-                result.status === "not_found" || result.status === "abandoned" || result.status === "pending"
-                  ? "No completed payment on this link yet. Nothing was charged. Offer to check again shortly or send a fresh link."
-                  : "This payment did not go through and nothing was charged. Offer a fresh link.",
-              gateway_response: result.gatewayResponse,
-            });
-          }
-
-          // Success. Paystack is the authority on how much was actually paid.
-          const paidNgn = result.amountNgn > 0 ? result.amountNgn : payment.amount_ngn;
-          const invoices = await invoicesFor();
-          const { allocations, unallocatedNgn } = allocateOldestFirst(paidNgn, invoices);
-
-          // Codes already in use, so a new one cannot collide with a code
-          // somebody is holding right now.
-          const taken = liveCodes(await db.listInvoices());
-
-          const applied: Array<Record<string, unknown>> = [];
-          for (const { invoice, appliedNgn } of allocations) {
-            const newPaid = invoice.amount_paid_ngn + appliedNgn;
-            const nowOutstanding = Math.max(0, invoice.amount_ngn - newPaid);
-            const settledNow = nowOutstanding === 0;
-
-            // A pickup code is issued only when this payment clears the
-            // invoice in full, and only once. A part payment never gets one —
-            // that is the whole point: no code, no goods. An invoice that
-            // already has a code keeps it, so verifying twice cannot mint a
-            // second code for the same goods.
-            const issueCode = settledNow && !invoice.collected && invoice.pickup_code === "";
-            const pickupCode = issueCode ? newPickupCode(taken) : invoice.pickup_code;
-            if (issueCode) taken.add(pickupCode);
-
-            await db.updateInvoice(invoice.invoice_id, {
-              amount_paid_ngn: newPaid,
-              ...(issueCode ? { pickup_code: pickupCode } : {}),
-            });
-
-            applied.push({
-              invoice_id: invoice.invoice_id,
-              items: invoice.items,
-              applied_ngn: appliedNgn,
-              applied_display: naira(appliedNgn),
-              now_status: settledNow ? "paid" : "part_paid",
-              outstanding_ngn: nowOutstanding,
-              outstanding_display: naira(nowOutstanding),
-              safe_to_release: settledNow && !invoice.collected,
-              // Present only for an invoice this payment settled outright.
-              ...(settledNow && !invoice.collected && pickupCode !== ""
-                ? { pickup_code: pickupCode }
-                : {}),
-            });
-          }
-
-          // Mark the payment applied last. If a write fails before this point
-          // the reference stays pending and a retry picks it up; the per-invoice
-          // amounts are the thing that must not be written twice, and the
-          // reference lock plus this flag are what stop that.
-          const verifiedAt = lagosTimestamp();
-          await db.updatePayment(payment.reference, { status: "success", verified_at: verifiedAt });
-
-          if (unallocatedNgn > 0) {
-            await db.appendFlag({
-              created_at: verifiedAt,
-              account_code: person.account_code,
-              invoice_id: payment.invoice_ids.join(","),
-              summary: `${naira(unallocatedNgn)} of payment ${payment.reference} could not be applied — the invoices it covers were already settled. Needs a refund or credit decision.`,
-            });
+          const outcome = await verifySingle(payment);
+          if (outcome.payment_status === "unreachable") {
+            return fail(
+              "paystack_unreachable",
+              `Could not check that payment. Nothing has changed on the account — say so and offer to try again in a minute. ${outcome.error ?? ""}`,
+              { reference: payment.reference },
+            );
           }
 
           const remaining = await db.listInvoicesForAccount(payment.account_id);
           const stillOwed = remaining.filter(isUnsettled);
 
           return ok({
-            reference: payment.reference,
-            payment_status: "success",
-            applied: true,
-            already_applied: false,
-            amount_ngn: paidNgn,
-            amount_display: naira(paidNgn),
-            paid_at: result.paidAt,
-            channel: result.channel,
-            applied_to: applied,
-            unallocated_ngn: unallocatedNgn,
-            flagged_for_owner: unallocatedNgn > 0,
+            ...outcome,
             remaining_balance: stillOwed.map(invoiceView),
             ...creditSummary(stillOwed),
-            note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Nothing is released without it. A part-paid invoice has no code and must not be collected.",
           });
-        }),
-      ),
+        }
+
+        // Case 2: Reference omitted — verify all pending payments for this account, newest first
+        const accountPayments = await db.listPaymentsForAccount(person.account_id);
+        accountPayments.sort((a, b) => b.created_at.localeCompare(a.created_at));
+        const pending = accountPayments.filter((p) => p.status === "pending" || p.status === "abandoned");
+
+        if (pending.length === 0) {
+          const remaining = await db.listInvoicesForAccount(person.account_id);
+          const stillOwed = remaining.filter(isUnsettled);
+          const latest = accountPayments[0];
+          if (latest && latest.status === "success") {
+            return ok({
+              reference: latest.reference,
+              payment_status: "success",
+              applied: false,
+              already_applied: true,
+              amount_ngn: latest.amount_ngn,
+              amount_display: naira(latest.amount_ngn),
+              payments: [
+                {
+                  reference: latest.reference,
+                  status: "success",
+                  applied: false,
+                  already_applied: true,
+                  amount_ngn: latest.amount_ngn,
+                  amount_display: naira(latest.amount_ngn),
+                },
+              ],
+              remaining_balance: stillOwed.map(invoiceView),
+              ...creditSummary(stillOwed),
+              note: "No pending payments found for this account. The latest payment was already confirmed and applied. Nothing was charged or applied again.",
+            });
+          }
+          return ok({
+            applied: false,
+            already_applied: false,
+            payments: [],
+            remaining_balance: stillOwed.map(invoiceView),
+            ...creditSummary(stillOwed),
+            note: "No pending payments found for this account. Nothing was charged or applied.",
+          });
+        }
+
+        const outcomes: SingleResult[] = [];
+        for (const p of pending) {
+          const res = await verifySingle(p);
+          outcomes.push(res);
+        }
+
+        const succeeded = outcomes.filter((o) => o.payment_status === "success" && o.applied);
+        const allApplied = outcomes.flatMap((o) => o.applied_to ?? []);
+        const totalPaidNgn = succeeded.reduce((sum, o) => sum + o.amount_ngn, 0);
+
+        const remaining = await db.listInvoicesForAccount(person.account_id);
+        const stillOwed = remaining.filter(isUnsettled);
+
+        if (outcomes.length === 1) {
+          const single = outcomes[0];
+          return ok({
+            ...single,
+            payments: outcomes.map((o) => ({
+              reference: o.reference,
+              status: o.payment_status,
+              applied: o.applied,
+              amount_ngn: o.amount_ngn,
+              amount_display: o.amount_display,
+            })),
+            remaining_balance: stillOwed.map(invoiceView),
+            ...creditSummary(stillOwed),
+          });
+        }
+
+        const firstOutcome = outcomes[0]!;
+        return ok({
+          reference: succeeded[0]?.reference ?? firstOutcome.reference,
+          payment_status: succeeded.length > 0 ? "success" : firstOutcome.payment_status,
+          applied: succeeded.length > 0,
+          already_applied: false,
+          amount_ngn: totalPaidNgn,
+          amount_display: naira(totalPaidNgn),
+          payments: outcomes.map((o) => ({
+            reference: o.reference,
+            status: o.payment_status,
+            applied: o.applied,
+            amount_ngn: o.amount_ngn,
+            amount_display: o.amount_display,
+          })),
+          applied_to: allApplied,
+          remaining_balance: stillOwed.map(invoiceView),
+          ...creditSummary(stillOwed),
+          note:
+            succeeded.length > 0
+              ? `Confirmed. ${naira(totalPaidNgn)} was verified and applied across ${succeeded.length} payment(s). Report the paid invoices and pickup codes.`
+              : "Checked pending payments. None have completed in Paystack yet. Nothing was charged.",
+        });
+      }),
   );
 
   // -------------------------------------------------------- pickup codes ---

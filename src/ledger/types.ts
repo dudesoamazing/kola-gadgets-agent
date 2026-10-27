@@ -110,6 +110,7 @@ export interface Ledger {
   updateInvoice(invoiceId: string, patch: Partial<Invoice>): Promise<void>;
 
   findPayment(reference: string): Promise<Payment | undefined>;
+  listPaymentsForAccount(accountId: string): Promise<Payment[]>;
   appendPayment(payment: Payment): Promise<void>;
   updatePayment(reference: string, patch: Partial<Payment>): Promise<void>;
 

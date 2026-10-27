@@ -9,7 +9,7 @@ back at demo numbers, so running it again gives the same results.
 1. `npm run setup:sheet -- --force` — Ada must owe ₦4,360,000, INV-112 part-paid, INV-110 uncollected.
 2. `curl -s https://kola-gadgets-mcp.onrender.com/health` — wakes the free tier. **Not optional:** confirmed on 25 Oct that Chord's first call to a cold server fails as `gateway request failed 500`. It retries fine, but you don't want that on camera.
 3. Open the Google Sheet on a second monitor or a second tab, on the **Invoices** tab, with INV-109's row visible.
-4. Have the test card ready: `4084 0840 8408 4081`, CVV `408`, expiry `12/30`, any OTP.
+4. Paystack test checkout uses simulated outcomes: select a success path (e.g. "bank authentication" -> approve) rather than typing card details.
 5. Credentials you'll type: **KG-ADA / 4461** (Ada, reseller), **KG-TUNDE / 2270** (Tunde, staff).
 
 ## The run
@@ -20,7 +20,7 @@ back at demo numbers, so running it again gives the same results.
 | 2 | `KG-ADA 4461` | Greets Ada by name. Never repeats the PIN. | 0:15–0:25 |
 | 3 | `abeg send acct dets` | **The centrepiece.** It does *not* send bank details. Lists INV-104 ₦2,400,000, INV-107 ₦1,650,000, INV-109 ₦310,000, total ₦4,360,000, and offers a payment link. | 0:25–0:55 |
 | 4 | `109` or `yes, just the AirPods` | Confirms ₦310,000 for INV-109 and sends a real `checkout.paystack.com` link. | 0:55–1:10 |
-| 5 | — | Open the link, pay with the test card. Keep it brief on screen. | 1:10–1:45 |
+| 5 | — | Open the link, select a simulated success outcome (e.g. bank authentication). Keep it brief on screen. | 1:10–1:45 |
 | 6 | `I don send am to your account` | **Second centrepiece.** Read as a payment *claim*, not a request for bank details. Verifies with Paystack, confirms ₦310,000, marks INV-109 paid, and gives a **6-digit pickup code**. Cut to the Sheet: `amount_paid_ngn` now 310000. | 1:45–2:15 |
 | 7 | `KG-TUNDE 2270 — customer is here with code <the code>` | **Third centrepiece.** Names the item to release: AirPods Pro (2nd gen), INV-109, ₦310,000. Marks it collected by Tunde. | 2:15–2:40 |
 | 8 | Same code again | Refused: already collected. A code works exactly once. | 2:40–2:55 |

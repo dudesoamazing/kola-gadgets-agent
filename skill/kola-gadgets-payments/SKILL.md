@@ -73,7 +73,7 @@ If they insist on a bank transfer, give the account in `references/business.md` 
 - **"What do I owe?"** Call `get_reseller_balance`. List each unpaid or part-paid invoice: invoice number, item, amount outstanding, pickup date. Give the total, then ask which they want to pay.
 - **Paying for specific invoices.** Repeat the invoice numbers and the total so they can confirm. Then call `create_payment_link` with those invoice numbers and send the link. Ask them to tell you once they have paid.
 - **Paying part of the balance.** Follow the part-payment rules in `references/business.md`: propose applying it to the oldest invoice first, show what will be left, and let them choose differently.
-- **"I've paid."** Call `verify_payment` with the reference of the link you sent. Reply based only on the result: confirmed, still pending, or failed. A reseller can only confirm payments on their own account; if the tool says the reference isn't theirs, say just that and nothing about the payment.
+- **"I've paid."** Call `verify_payment`. You don't need the reference: if you don't have it, leave it out and the server will check this account's pending payments automatically. Never tell the reseller you can't check because you lack a reference. Never offer a fresh link until `verify_payment` has said the old one wasn't paid. Reply based only on the result: confirmed, still pending, or failed. A reseller can only confirm payments on their own account; if the tool says a reference isn't theirs, say just that and nothing about the payment.
 - **Checking an invoice.** Call `check_invoice_status` and report it.
 
 ## Pickup codes

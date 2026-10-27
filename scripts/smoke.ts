@@ -458,6 +458,85 @@ async function main(): Promise<void> {
       stillOwed.invoice?.outstanding_ngn,
     );
 
+    // ---------------------------- verify without reference (lost between turns) ---
+    section("Verify without reference");
+    const CHIDI = { account_code: "KG-CHIDI", pin: "6673" };
+
+    // Case 1: One pending unpaid — create link, do not pay, call verify with no reference
+    const chidiLinkA = await call("create_payment_link", {
+      ...CHIDI,
+      invoice_ids: ["INV-111"],
+      amount_ngn: 200_000,
+    });
+    const chidiRefA = String(chidiLinkA.reference);
+    const chidiUnpaid = await call("verify_payment", { ...CHIDI });
+    check("one pending unpaid is not applied", chidiUnpaid.applied === false, chidiUnpaid);
+    check(
+      "one pending unpaid status is pending",
+      chidiUnpaid.payment_status === "pending" || chidiUnpaid.payment_status === "abandoned",
+      chidiUnpaid.payment_status,
+    );
+
+    // Case 2: Another account's pending payment is never touched
+    const emekaProbe = await call("verify_payment", { ...EMEKA });
+    check("another account's pending payment never touched", emekaProbe.applied === false, emekaProbe);
+
+    // Case 3: One pending paid — pay the link in Paystack mock, verify without reference
+    await fetch(`http://127.0.0.1:${port}/mock/checkout/${chidiRefA}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "outcome=success",
+    });
+    const chidiPaid = await call("verify_payment", { ...CHIDI });
+    check(
+      "one pending paid confirms payment",
+      chidiPaid.payment_status === "success" && chidiPaid.applied === true,
+      chidiPaid,
+    );
+    check(
+      "INV-111 amount paid updated",
+      chidiPaid.applied_to?.[0]?.applied_ngn === 200_000,
+      chidiPaid.applied_to,
+    );
+
+    // Case 4: Repeat call applying nothing twice
+    const chidiAgain = await call("verify_payment", { ...CHIDI });
+    check("repeat call reports already applied", chidiAgain.already_applied === true, chidiAgain);
+    check("repeat call applies nothing twice", chidiAgain.applied === false, chidiAgain.applied);
+
+    // Case 5: Several pending payments for one account
+    const chidiLinkB = await call("create_payment_link", {
+      ...CHIDI,
+      invoice_ids: ["INV-111"],
+      amount_ngn: 200_000,
+    });
+    const chidiLinkC = await call("create_payment_link", {
+      ...CHIDI,
+      invoice_ids: ["INV-111"],
+      amount_ngn: 200_000,
+    });
+    const chidiRefB = String(chidiLinkB.reference);
+    const chidiRefC = String(chidiLinkC.reference);
+
+    // Pay link C, leave link B unpaid
+    await fetch(`http://127.0.0.1:${port}/mock/checkout/${chidiRefC}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "outcome=success",
+    });
+
+    const chidiMulti = await call("verify_payment", { ...CHIDI });
+    check(
+      "several pending verifies and applies the paid one",
+      chidiMulti.applied === true && chidiMulti.amount_ngn === 200_000,
+      chidiMulti,
+    );
+    check(
+      "several pending reports both payments",
+      Array.isArray(chidiMulti.payments) && chidiMulti.payments.length === 2,
+      chidiMulti.payments,
+    );
+
     // ------------------------------------------------------- pickup codes ---
     section("Pickup codes");
     // INV-109 was settled in full earlier in this run, so verify_payment

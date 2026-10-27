@@ -179,6 +179,26 @@ export class TableLedger implements Ledger {
     return undefined;
   }
 
+  async listPaymentsForAccount(accountId: string): Promise<Payment[]> {
+    const wanted = accountId.trim().toUpperCase();
+    const { header, rows } = await this.store.readTable("Payments");
+    const found: Payment[] = [];
+    for (const row of rows) {
+      if (optionalCell(row, header, "account_id").toUpperCase() !== wanted) continue;
+      found.push({
+        reference: cell(row, header, "reference"),
+        account_id: optionalCell(row, header, "account_id").toUpperCase(),
+        invoice_ids: splitInvoiceIds(cell(row, header, "invoice_ids")),
+        amount_ngn: parseAmount(cell(row, header, "amount_ngn")),
+        status: parsePaymentStatus(cell(row, header, "status")),
+        link: cell(row, header, "link"),
+        created_at: cell(row, header, "created_at"),
+        verified_at: cell(row, header, "verified_at"),
+      });
+    }
+    return found;
+  }
+
   async appendPayment(payment: Payment): Promise<void> {
     await this.store.appendRow("Payments", [
       payment.reference,

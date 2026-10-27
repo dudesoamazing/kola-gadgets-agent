@@ -131,6 +131,12 @@ Template for each note:
 - **Fix or workaround:** Nothing to fix; this is the design working. The agent used the name as a greeting and still demanded an account code and PIN before touching the account, which is exactly right. It is a good illustration of why the identity rebuild was necessary: a name supplied by the sender is a claim, and claims do not get to read a ledger.
 - **What Chord should change:** Document what travels with a conversation and how trustworthy each piece is. A display name the sender typed and a verified channel identifier are very different things, and a builder who assumes the former is the latter will write an authorisation check that a stranger can walk straight through.
 
+### Agent loses payment reference between conversation turns
+- **What happened** (27 Oct, 7:26–7:30pm WAT): In the simulator, `create_payment_link` returned a reference and the agent sent Ada the link (₦4,360,000 for INV-104, 107 and 109). I paid it in Paystack test mode, and Paystack confirmed the transaction succeeded. When I replied *"I don run am"*, the agent said: *"I need the payment reference to check, and I don't have it."* It then checked invoice status instead and reported *"no payment shows"*, while the money was sitting confirmed in Paystack.
+- **How I found the cause:** Chord appears not to persist tool return payloads in the model's context across conversation turns; only the visible assistant messages are retained. Because the agent's visible message gave the bare payment URL and didn't include the raw reference string, the reference was lost by the time the reseller said they had paid.
+- **Fix or workaround:** Made `reference` optional on `verify_payment`. When omitted, the server looks up the authenticated account's payments in the Payments tab with status `pending` (newest first) and verifies each with Paystack. State lives in the ledger, not in the model's turn-by-turn memory. Also updated `SKILL.md` to instruct the agent to leave the reference out if it doesn't have it, and never tell the reseller it cannot check due to a missing reference.
+- **What Chord should change:** Keep tool results in the conversation context across turns, or document clearly that they are dropped between turns. Any multi-step tool pattern (such as create link, wait for user action, verify later) is broken if tools require IDs returned in previous turns.
+
 ---
 
 ## Setup issues outside Chord
@@ -171,5 +177,11 @@ Not Chord problems, so not candidates for the final field notes. Kept here for t
 - **What happened** (25 Oct): Initial deployment used the development placeholder `kola-local-dev-token` from `.env.example`. While convenient locally, using a predictable placeholder on a public HTTPS URL (`https://kola-gadgets-mcp.onrender.com/mcp`) is poor hygiene.
 - **How I found the cause:** Reviewing public endpoint security prior to registering the custom tool in Chord.
 - **Fix or workaround:** Generated a 32-byte (64-character) random hex string via `openssl rand -hex 32` and saved it as `MCP_BEARER_TOKEN` in Render's dashboard. Kept `kola-local-dev-token` in local `.env` so local testing remains distinct from production. Verified old token receives 401 and new token receives 200. Rotated again on 27 Oct after part of it was written into these notes.
+
+### Paystack test checkout moved from card form to simulated outcomes
+- **What happened** (27 Oct): Opening a test payment link on `checkout.paystack.com` presents simulated outcome buttons (e.g. "Success", "Bank Authentication", "Declined") rather than a manual card entry form.
+- **How I found the cause:** Observed while completing a live test payment in the browser during the 27 Oct testing session.
+- **Fix or workaround:** Click the simulated success option (e.g. select "bank authentication" and approve) to trigger a successful transaction immediately without typing test card details.
+- **For the README / recording:** "In Paystack test mode, the checkout modal offers simulated outcomes directly — select success to verify without entering test card numbers."
 
 

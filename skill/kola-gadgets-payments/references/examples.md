@@ -42,7 +42,7 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 ## Context, not keywords
 
 > Reseller: I don send am to your account since morning
-> Agent: Thanks — let me check. [calls verify_payment or check_invoice_status, then reports the result]
+> Agent: Thanks — let me check. [calls verify_payment (reference optional) or check_invoice_status, then reports the result]
 
 This mentions "account" but is not a request to pay. It is a claim of payment.
 

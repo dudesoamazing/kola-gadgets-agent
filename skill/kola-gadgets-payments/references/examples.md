@@ -2,6 +2,8 @@
 
 These show the tone and the right handling. They are examples, not scripts — use the real data the tools return.
 
+Note the shape of a payment link: the bare URL on its own line, never `[text](url)`. WhatsApp does not render Markdown, so a bracketed link arrives as unusable text.
+
 ## Signing in
 
 > **Reseller:** hello
@@ -20,7 +22,9 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 > INV-109 · AirPods Pro · ₦310,000 · reserved 17 Oct
 > Total ₦4,360,000. Which would you like to pay?
 > **Reseller:** 104 and 109
-> **Agent:** That's ₦2,710,000 for INV-104 and INV-109. Here's your payment link: [link]. It's valid for 24 hours. Tell me once you've paid.
+> **Agent:** That's ₦2,710,000 for INV-104 and INV-109. Here's your payment link — valid for 24 hours:
+> https://checkout.paystack.com/xxxxxxxxxxxx
+> Tell me once you've paid.
 > **Reseller:** done
 > **Agent:** Confirmed — ₦2,710,000 received, ref [reference]. INV-104 and INV-109 are paid.
 > Your pickup codes: INV-104 [code] for the 2× iPhone 15 Pro, INV-109 [code] for the AirPods Pro. Show them at the shop.
@@ -31,7 +35,9 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 > **Reseller:** abeg send acct dets
 > **Agent:** Hi Ada. You owe ₦310,000 on INV-109 (AirPods Pro). Instead of a bank transfer, I can send a payment link — it's confirmed instantly and nobody has to chase a receipt. Shall I send it?
 > **Reseller:** ok
-> **Agent:** Here's your link for ₦310,000 (INV-109): [link]. Tell me once you've paid.
+> **Agent:** Here's your link for ₦310,000 (INV-109):
+> https://checkout.paystack.com/xxxxxxxxxxxx
+> Tell me once you've paid.
 
 ## Context, not keywords
 

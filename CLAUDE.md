@@ -17,7 +17,7 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | 20–21 Oct | Account setup and building outside Chord; Paystack and the Google Sheet wired up and proven |
 | **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
 | **22 Oct** | Told credits were added — the 5-day clock started |
-| **25 Oct** | **Blocked: no credits on the account and no simulator access.** MCP server registers and lists tools fine; the teammate cannot be run. Emailed TSG the same evening (`docs/tsg-blocker-email.md`) |
+| **25 Oct** | Briefly blocked on credits and simulator access; emailed TSG (`docs/tsg-blocker-email.md`). **Resolved same day** — first real simulator conversation ran against the live MCP server |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
 | **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment setup started |
 | **Mon 26 Oct, evening** | **Submit** — deliberately a night early |
@@ -105,6 +105,7 @@ scripts/setup-sheet.ts  creates and seeds the four tabs
 - **Account codes normalised on letters and digits**, so "kg ada", "KG-ADA" and "kgada" all match. PINs normalised on digits, so "4 4 6 1" works. The canonical code the agent says out loud is the one Kola wrote in the sheet, not the squashed comparison key — the smoke test caught the agent calling her account "KGADA".
 - **The PIN never leaves the ledger layer.** `Ledger.authenticate(code, pin)` compares it internally and returns the person or a reason; there is no getter for a PIN anywhere, and `senderView` carries neither PIN nor phone. Anything the model can see, it can repeat into the chat.
 - **Invoice ids normalised on the digits**, so "104", "inv 104" and "INV-104" all resolve.
+- **The skill writes WhatsApp formatting, not Markdown.** Chord sends replies to the channel verbatim, so `**bold**` arrives as asterisks and `[text](url)` arrives as an untappable string. Single-asterisk bold, bare URLs on their own line. Found in the first simulator run.
 - **Explicit `0.0.0.0` binding on `app.listen`.** Render's reverse proxy routes traffic to container IPv4 (`10.x.x.x`); without specifying `0.0.0.0`, Node defaults to IPv6 `::` on Linux containers, returning 502 Bad Gateway to the load balancer.
 - **Surrounding quotes stripped on env vars and private keys; 5s timeout on health check.** Dashboard inputs often retain quotes copied from `.env`; health check bounds external Google Sheets API calls to 5s and logs failures to `console.error`.
 
@@ -232,7 +233,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] **Pickup codes (23 Oct)** — `pickup_code` on Invoices, minted by `verify_payment` only on full settlement, `get_pickup_codes` for resellers, `record_handover` works from the code, 3 wrong codes locks that staff account. Skill, examples, seed data, smoke tests and go-live note updated
 - [x] **Unbroken click-through proven on real Paystack test mode (25 Oct)** — `create_payment_link` on production issued `checkout.paystack.com/f35kw562fpz24nn`, Marvin opened and paid it with the test card in a browser, `verify_payment` returned `success` (channel `card`), applied ₦310,000, marked INV-109 paid and minted pickup code; a repeat verify did not re-apply; staff released against the code and were refused the second time. Beats and timings in `docs/recording-script.md`
 - [x] Chord account email sent; credits added 22 Oct
-- [~] Register MCP server, upload skill, test every path in the simulator — **MCP server registered 25 Oct** and listing all eight tools. First `show tools` failed with `gateway request failed 500` (cold free-tier server); retry worked. **Blocked from here: no credits, no simulator access.** Chased with TSG 25 Oct
+- [~] Register MCP server, upload skill, test every path in the simulator — **registered and running 25 Oct.** First `show tools` failed with `gateway request failed 500` (cold free-tier server); retry worked. Skill is live: the agent asks for code and PIN, calls `identify`, and lists Ada's three invoices totalling ₦4,360,000 from the real Sheet. Two findings fixed/logged — Markdown passed raw to WhatsApp, and the simulator's self-declared display name. **Still to run: "send acct dets", the payment, and the staff release**
 - [ ] Record, finish field notes, submit
 - [ ] **Contingency if Chord access doesn't arrive:** record against the MCP server directly (Inspector or curl) showing the same eight tools and the real Paystack + Sheet chain, screenshot the Chord Tools panel listing the tools as proof the integration is registered, and say plainly in the submission what was blocked, when it was reported and what would have been shown. The brief explicitly allows this — "submit a working demo that shows what you had in mind, along with a note covering what stopped you"
 

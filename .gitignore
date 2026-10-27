@@ -8,5 +8,6 @@ service-account*.json
 # Confidential exercise brief
 docs/brief.md
 .DS_Store
+.claude/
 # Personal prep for the live session
 docs/live-session.md

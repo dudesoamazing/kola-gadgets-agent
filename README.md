@@ -1,6 +1,6 @@
 # Kola Gadgets payments agent
 
-A WhatsApp agent for a phone and laptop supplier in Computer Village, Lagos. It ties every payment to a specific invoice, verifies it through Paystack, and lets shop staff confirm payment before releasing stock — without anyone needing access to the owner's bank account.
+A WhatsApp agent for a phone and laptop supplier in Computer Village, Lagos. It ties every payment to a specific invoice, verifies it through Paystack, and lets shop staff confirm payment before releasing stock, without anyone needing access to the owner's bank account.
 
 Built on Chord for the TSG Labs build exercise. The problem, the design decisions and what was left out are in [`docs/problem-statement.md`](docs/problem-statement.md).
 
@@ -64,7 +64,7 @@ curl -s localhost:3000/health | jq
 npm run smoke
 ```
 
-Boots the server, talks to it with a real MCP client, and walks all eight tools over 110 assertions — including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a wrong PIN on every tool, a part payment getting no pickup code, a reused code, a staff account locked out after three wrong codes, and Paystack being unreachable. It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
+Boots the server, talks to it with a real MCP client, and walks all eight tools over 110 assertions (including paying twice, racing two verifies against one reference, a failed payment, a reseller asking after someone else's invoice or payment reference, a wrong PIN on every tool, a part payment getting no pickup code, a reused code, a staff account locked out after three wrong codes, and Paystack being unreachable). It works on a throwaway copy of `data/`, so the seed files stay put. No Chord credits, no Paystack account, no Sheet needed.
 
 To poke at the tools by hand:
 
@@ -84,7 +84,7 @@ Auth is a service-account JWT rather than OAuth on purpose: Chord's `oauth` tool
 
 **Paystack.** Put the `sk_test_…` key in `PAYSTACK_SECRET_KEY` and set `PAYSTACK_MODE=live`. The server refuses to report healthy on an `sk_live` key.
 
-Two things worth knowing, both learned the hard way against the real test API and written up in the field notes: Paystack **rejects reserved-TLD emails**, so the seed ledger uses `example.com` rather than `.test` — put `.test` back and every payment link fails. And there is **no test-mode amount cap**; ₦50,000,000 initializes fine, so `PAYSTACK_MODE=mock` is an offline convenience only, not a workaround for large invoices.
+Two things worth knowing, both learned the hard way against the real test API and written up in the field notes: Paystack **rejects reserved-TLD emails**, so the seed ledger uses `example.com` rather than `.test` (put `.test` back and every payment link fails). And there is **no test-mode amount cap**; ₦50,000,000 initializes fine, so `PAYSTACK_MODE=mock` is an offline convenience only, not a workaround for large invoices.
 
 ### Deploying
 
@@ -92,10 +92,10 @@ Two things worth knowing, both learned the hard way against the real test API an
 
 Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `https://<host>/mcp`, auth type **bearer**, and the token from `MCP_BEARER_TOKEN`. 
 
-**Keeping the server awake:** Free-tier hosting (like Render) spins down after 15 minutes of inactivity, causing a cold start of up to ~50 seconds that can time out Chord's tool calls and silently trigger an escalation to a human. During testing, this is mitigated with an external pinger (e.g. UptimeRobot pinging `https://kola-gadgets-mcp.onrender.com/health` every 10 minutes). For production, the service should run on a paid, always-on instance so customers never hit cold starts.
+**Keeping the server awake:** Free-tier hosting (like Render) spins down after 15 minutes of inactivity, causing a cold start of up to ~50 seconds that can time out Chord's tool calls and coincided with a silent escalation to a human in testing. During testing, this is mitigated with an external pinger (e.g. UptimeRobot pinging `https://kola-gadgets-mcp.onrender.com/health` every 5 minutes). For production, the service should run on a paid, always-on instance so customers never hit cold starts.
 
 ## How AI tools were used
 
-Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls — what counts as proof of payment, oldest-invoice-first, who can mark what — and had Claude build to them, then pushed back where the first pass was too loose. Cursor for smaller edits. The skill is mine; the tone and the payment-intent rules are the part I didn't want a model guessing at.
+Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls: what counts as proof of payment, oldest-invoice-first, who can mark what. Then I had Claude build to them, then pushed back where the first pass was too loose. Cursor for smaller edits. The skill is mine; the tone and the payment-intent rules are the part I didn't want a model guessing at.
 
-One example of the back-and-forth being worth it: the first smoke test failed on "staff cannot release a part-paid invoice" because the invoice I picked had already gone out on credit, so the agent warned about the handover instead of the balance. The code was right and my test was wrong. That precedence — *you already gave this away* beats *this isn't paid yet* — is now asserted on purpose.
+One example of the back-and-forth being worth it: the first smoke test failed on "staff cannot release a part-paid invoice" because the invoice I picked had already gone out on credit, so the agent warned about the handover instead of the balance. The code was right and my test was wrong. That precedence (*you already gave this away* beats *this isn't paid yet*) is now asserted on purpose.

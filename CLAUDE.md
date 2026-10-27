@@ -16,14 +16,10 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | 20 Oct | Sent questions on sender identity and the built-in Paystack connector |
 | 20–21 Oct | Account setup and building outside Chord; Paystack and the Google Sheet wired up and proven |
 | **22 Oct** | **TSG replied: Chord never passes the sender's phone number to a teammate or its tools, and the simulator has one profile per agent.** Identity rebuilt on account code + PIN |
-| **22 Oct** | Told credits were added — the 5-day clock started |
-| **25 Oct** | Briefly blocked on credits and simulator access; emailed TSG (`docs/tsg-blocker-email.md`). **Resolved same day** — first real simulator conversation ran against the live MCP server |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
 | **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment live with public HTTPS and 64-char bearer token |
-| **27 Oct** | **Credits received, simulator connected, paths 1–2 tested** (greeting, identification with code/PIN, balance check against live Sheet). Investigated cold-start escalation to human, credit deduction rounding, dark-mode button contrast, and skill sync |
-| **Tue 27 Oct, evening** | **Submit** — finalize recording, field notes, and repo |
-
-Submit Monday night, not Tuesday lunchtime. The buffer is for the things that only break on the day.
+| **27 Oct** | **Credits and simulator access actually arrived** (TSG's 22 Oct email said they were added, but they weren't visible until 27 Oct). Simulator connected, paths 1–2 tested. The 5-day window runs to about 1 Nov |
+| **Wed 28 / Thu 29 Oct** | **Target submission** — finalize recording, field notes, and repo |
 
 ## The problem
 

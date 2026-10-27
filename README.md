@@ -90,7 +90,9 @@ Two things worth knowing, both learned the hard way against the real test API an
 
 `render.yaml` deploys it as a free Render web service. Set the secrets in the dashboard, not in the file. Any host works as long as it gives you public HTTPS: Chord blocks private and loopback addresses, so there's no tunnelling around it.
 
-Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `https://<host>/mcp`, auth type **bearer**, and the token from `MCP_BEARER_TOKEN`. Free tiers sleep, and a cold start can time out Chord's first call — keep it warm or expect one dud message.
+Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `https://<host>/mcp`, auth type **bearer**, and the token from `MCP_BEARER_TOKEN`. 
+
+**Keeping the server awake:** Free-tier hosting (like Render) spins down after 15 minutes of inactivity, causing a cold start of up to ~50 seconds that can time out Chord's tool calls and silently trigger an escalation to a human. During testing, this is mitigated with an external pinger (e.g. UptimeRobot pinging `https://kola-gadgets-mcp.onrender.com/health` every 10 minutes). For production, the service should run on a paid, always-on instance so customers never hit cold starts.
 
 ## How AI tools were used
 

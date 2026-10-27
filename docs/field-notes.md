@@ -55,11 +55,63 @@ Template for each note:
 - **How I found the cause:** Chord's MCP connections doc: the `oauth` flow "requires … dynamic client registration", registers a public client automatically, and "providers requiring a pre-registered client ID/secret … need an integration beyond these APIs; there are no request fields for those settings." Google's Sheets MCP doc asks for an OAuth client ID and secret created in advance and doesn't mention dynamic registration. The other auth types don't help either: Google API keys only reach public data, and a static bearer would be a Google access token that expires in about an hour.
 - **Fix or workaround:** Built our own MCP server. It holds a Google service-account credential and reaches the Sheet itself; Chord only ever sees a long-lived bearer token. This turned out to be the better design anyway: Google's server exposes raw cell tools (`update_values`, `update_formulas`), which would let the agent write to *any* cell — including the amount paid. Ours exposes business actions only, so "only a verified Paystack payment marks an invoice paid" is enforced by the tools, not just the prompt.
 - **What Chord should change:** Accept a pre-registered OAuth **client ID and secret** (plus custom scopes) when registering an MCP server, alongside dynamic registration. That would unlock Google Workspace's MCP servers — Sheets, and the rest of the family — which many small businesses already run on. Until then, state in the auth section that `oauth` only works with providers that support dynamic client registration, and name Google as an example that doesn't.
+
+### Cold start causes a silent escalation to a human
+- **What happened:** During testing on 27 Oct, the agent stopped replying and silently escalated the conversation to a human.
+  - Times (all WAT / UTC+1): My last working replies were at 5:05pm and 5:07pm. At 5:56pm I sent "How much do I owe?". The simulator gave no answer, showing only: *"The agent didn't answer. Try sending again."*
+  - I retried at 5:58pm, 5:58pm and 5:59pm, and loaded `/health` directly in the browser to check the server. Still no reply from the agent in the simulator.
+  - In the Chord dashboard, I opened the conversation and found a banner stating that the agent was paused and a human had taken over. I clicked to hand ownership back to the agent.
+  - At 6:01pm, the agent resumed, read all the queued messages that had piled up while paused, and replied once with Ada's balance.
+- **How I found the cause:**
+  - *Confirmed facts:* Render logs show the MCP server began cold-starting at 5:57:02pm and became ready at 5:57:17pm (15 seconds boot). Render's free tier spins down after 15 minutes of inactivity; having received no requests since ~5:22pm, the server was asleep when the 5:56pm message arrived.
+  - In Chord's Activity panel, an entry logged at 17:57 read: *"You Escalated — Escalated to a human"*, attributed to an ID `f701632d-bc71-45b6-ba17-cf5fcfc09598`. This ID does not match the teammate's ID. There was no escalation reason given, and no handover note was left in the conversation.
+  - *Ruled out:* I checked whether saving skill files had triggered the pause. I tested editing two `.md` files in Chord, and the agent did not pause. A local power cut and internet switch on my side also occurred around that window, but both the agent (Chord) and the tool server (Render) run entirely in the cloud, so local connectivity could not cause the cloud agent to pause.
+  - *What the agent said:* When asked in the chat about its escalation behaviour, the agent replied that it has a handover action which it calls with a reason, that it is not instructed to hand over on tool failures, and that it has no visibility into past handover events.
+  - *Inference vs confirmed:* It is confirmed that the 5:56pm message coincided with a cold-starting server, and that an escalation occurred at 17:57. It is not confirmed whether the model invoked a handover tool under the hood when `get_reseller_balance` failed to respond in time, or whether Chord's platform automatically pauses an agent after repeated unanswered messages or tool gateway timeouts.
+- **Fix or workaround:** Two-part fix:
+  1. *Prompt-level guard:* Added an explicit instruction to `SKILL.md`: *"Never hand over to a human because a tool failed or was slow. Say you couldn't reach the system, that nothing has changed, and suggest trying again in a minute. Hand over only when the person asks for a human, or for the cases the skill already lists."*
+  2. *Infrastructure keep-alive:* Configured an external monitor (UptimeRobot) to ping `https://kola-gadgets-mcp.onrender.com/health` every 10 minutes so the server never sleeps during testing. For production, the go-live note specifies an always-on paid instance.
+- **What Chord should change:**
+  1. *Attribution and reason:* Record explicitly in the Activity log and conversation metadata *who* or *what* escalated (the model via a tool, a timeout threshold, or platform policy) and the exact trigger or error.
+  2. *Customer transparency:* When a chat is escalated, show the messaging user *"Connecting you to a team member..."* rather than the confusing *"The agent didn't answer. Try sending again."*, which invites rapid re-sending that queues up.
+  3. *Operator visibility:* When an agent pauses and hands over, highlight the conversation prominently in the dashboard (e.g. an "Action required / Handed over" queue) so human operators notice immediately.
+
 ### Chord's first call to a sleeping free-tier server fails as "gateway request failed 500"
-- **What happened** (25 Oct): Registered the MCP server in Chord — Streamable HTTP, `https://kola-gadgets-mcp.onrender.com/mcp`, bearer auth — and the first **"show tools"** came back as **`gateway request failed 500`**. An immediate retry listed all eight tools and everything worked from then on.
-- **How I found the cause:** The server had been idle, and Render's free tier spins a service down after about 15 minutes, so the first request pays a cold boot. The retry succeeding within seconds rules out auth, URL and transport — all three would have failed identically the second time. `/health` straight afterwards returned `ok` in well under a second, confirming the server was fine once awake. I'd predicted this failure before registering; what I had not predicted was how it would *look*.
-- **Fix or workaround:** Hit `/health` to wake the service before using the simulator, and before recording. For a real deployment this is a paid instance, or a cron ping — but the honest fix is not to run a payments agent on a tier that sleeps.
-- **What Chord should change:** This is the thing I'd actually ask for. **`gateway request failed 500` is the same message whether my server returned a 500, timed out, refused the connection, or was simply asleep** — four different problems with four different fixes, and the one I hit is the most common way a first integration fails. Chord already knows which it was. Surface the upstream status code and whether the request timed out, e.g. *"no response from your MCP server within Ns"*. Better still: retry a first contact once with a longer timeout, since cold starts are near-universal on free hosting, and show the result of the connection probe in the Tools panel when a server is registered. As it stands, a builder's reasonable conclusion is "my server is broken" and the next hour goes into debugging something that already works.
+- **What happened** (25–27 Oct): When probing the MCP server in Chord — Streamable HTTP, `https://kola-gadgets-mcp.onrender.com/mcp`, bearer auth — clicking **"show tools"** when the server was asleep returned **`gateway request failed 500`**. An immediate retry listed all eight tools.
+- **How I found the cause:** The server had been idle, and Render's free tier spins down after 15 minutes. Chord's gateway sends the probe, waits briefly, and fails with a generic 500 instead of waiting for the ~15–20s wake-up or reporting an upstream timeout. A retry seconds later succeeded immediately once the container was warm.
+- **Fix or workaround:** Ping `/health` to warm the server before testing, and keep it awake with UptimeRobot during test sessions.
+- **What Chord should change:** Surface upstream error details. `gateway request failed 500` conflates a sleeping server, a timeout, a genuine 500 from application code, and a network failure. Chord should indicate a timeout (*"MCP server took longer than Ns to respond"*) and retry initial tool discovery probes once.
+
+### Credit usage is rounded to integers in the dashboard header, hiding consumption
+- **What happened** (27 Oct): After multiple full conversation runs in the WhatsApp simulator involving real tool calls against Google Sheets and Paystack, the credit balance displayed in the Chord dashboard header remained unchanged at 50.
+- **How I found the cause:** I initially asked TSG support how credits are counted. Upon inspecting the Activity panel, I discovered that 0.47 credits had actually been consumed across 6 requests (~0.08 credits per tool request). The header UI rounds fractional balances to the nearest integer, so `49.53` displayed as `50`.
+- **Fix or workaround:** Look at the Activity panel log for actual fractional credit consumption rather than relying on the header balance.
+- **What Chord should change:** Display fractional credits in the dashboard header (e.g. `49.53 credits`) or show two decimal places so builders know their tool runs are actively registering.
+
+### Skill files don't sync from git and must be updated by hand in Chord
+- **What happened** (27 Oct): Changes made to skill files (`SKILL.md`, `references/examples.md`, `references/business.md`) in the local git repo and pushed to GitHub do not automatically update the live agent in Chord. Chord stores a static copy from the initial upload.
+- **How I found the cause:** After pushing formatting updates to GitHub, the simulator still produced responses according to the previous version. Each file had to be individually opened in Chord, pasted over, and saved via "Update selected file".
+- **Fix or workaround:** Keep local files and live Chord files in sync by manually copying updated skill files into Chord after every commit. (Chord does allow in-place editing of individual files, avoiding the need to delete and recreate the teammate).
+- **What Chord should change:** Provide a GitHub integration or webhook to sync skill repositories automatically, or a CLI tool (`chord skill push`), eliminating the risk of git and production prompts drifting apart.
+
+### Skill file roles ("Instructions" badge vs references) are unexplained and vulnerable to misclicks
+- **What happened** (27 Oct): Inside the Chord teammate skill files view, one file is tagged with an "Instructions" badge, while all other files display a "Make instructions" button. There are no tooltips, documentation links, or explanatory text.
+- **How I found the cause:** Inspecting the file list while updating reference documents.
+- **Inference:** The badge denotes the primary instructions prompt (`SKILL.md`), while the remaining files are treated as supplementary reference documents. A single misclick on "Make instructions" on a reference file (such as `business.md`) would silently change the primary system prompt and break agent behaviour with no warning or undo confirmation.
+- **Fix or workaround:** Leave `SKILL.md` as the designated instructions file and take care not to click "Make instructions" on reference files.
+- **What Chord should change:** Add clear tooltips explaining the role of the instructions file versus reference files, and add a confirmation prompt before switching which file acts as the primary instructions prompt.
+
+### Agent apologized unprompted after queued message delivery
+- **What happened** (27 Oct): When the conversation was unpaused following the cold-start escalation, the agent processed the customer's repeated messages from the queue and opened its reply with *"I'm sorry for the mix-up"*, even though no error or misunderstanding had occurred.
+- **How I found the cause:** Observed in the WhatsApp simulator transcript at 6:01pm.
+- **Fix or workaround:** Added an explicit prompt rule in `SKILL.md`: *"If someone repeats a question, answer it again plainly. Don't apologise unless something was actually wrong."*
+- **What Chord should change:** Base agent behaviour guidelines should discourage unwarranted apologies when processing sequential or re-sent user messages.
+
+### Dark-mode contrast bug on the teammate chat send button
+- **What happened** (27 Oct): In dark mode within the Chord dashboard, typing into the teammate chat input causes the send button to turn white (active state), but the directional arrow icon inside remains white or very pale. The arrow is almost invisible against the white button.
+- **How I found the cause:** Testing the teammate chat in dark mode. Switching to light mode confirmed proper contrast: the active button is black and the arrow icon is crisp white.
+- **Fix or workaround:** Test in light mode or click the white circular button knowing the icon is low-contrast.
+- **What Chord should change:** In dark mode, invert the active send button arrow icon to black or dark grey when the button background turns white.
 
 ### No credits and no simulator access, so the agent can't be run in Chord
 - **What happened** (25 Oct): With the MCP server registered and its tools listing correctly in Chord, I went to run a conversation and found **no credits on the account and no access to the WhatsApp simulator**. The Tools panel works; the teammate can't be exercised. CLAUDE.md had recorded credits as added on 22 Oct, which is what started my 5-day clock — so either they never landed or they didn't come with simulator access.
@@ -105,9 +157,19 @@ Not Chord problems, so not candidates for the final field notes. Kept here for t
 - **For the README:** "Always specify host `0.0.0.0` when listening in containerized environments (Render, Railway, Fly.io) so the platform's reverse proxy can route IPv4 traffic."
 
 ### Environment variable quotes broke Google JWT authentication
-- **What happened** (25 Oct): `GOOGLE_PRIVATE_KEY` copied from local `.env` into Render's dashboard retained surrounding double quotes (`"-----BEGIN..."`). OpenSSL threw `DECODER routines::unsupported` on the PEM key, causing `/health` to return 503 and Render to fail the health check.
-- **How I found the cause:** Local `.env` parsers strip quotes automatically, but production environments (Render, Docker) inject `process.env` verbatim. Without quote trimming in `env()`, the PEM parser received a literal quote as the first character instead of `-----BEGIN`.
-- **Fix or workaround:** Cleaned the key in Render's dashboard, updated `src/config.ts` to automatically strip surrounding single/double quotes from all environment variables and private keys, and added explicit error logging to `console.error` in the health check.
+- **What happened** (25 Oct): `GOOGLE_PRIVATE_KEY` copied from local `.env` into Render's dashboard retained surrounding double quotes (`"-----BEGIN..."`). Render's deploy timed out after 15 minutes with only `==> Timed Out`, rather than reporting "invalid key" or "crypto error".
+- **How I found the cause:** Local `.env` parsers strip quotes automatically, but production environments (Render, Docker) inject `process.env` verbatim. Without quote trimming in `env()`, the PEM parser received a literal quote as the first character instead of `-----BEGIN` and threw `DECODER routines::unsupported`. Because `/health` returned 503, Render considered the container unhealthy and waited out its full 15-minute deployment timeout.
+- **Fix or workaround:** Cleaned the key in Render's dashboard, updated `src/config.ts` to automatically strip surrounding single/double quotes from all environment variables and private keys, and added explicit error logging to `console.error` in the health check so failures are immediately visible in Render logs.
 - **For the README:** "Paste private keys into hosting provider dashboards without enclosing quotes."
+
+### GitHub repo already existed before manual creation
+- **What happened** (25 Oct): When setting up the remote repository, checking `git status` and git remotes showed the repository `dudesoamazing/kola-gadgets-agent` had already been pushed from the terminal earlier in the session.
+- **How I found the cause:** Checked `git remote -v` and `git status` before attempting to recreate the repository through GitHub's web interface or Homebrew CLI.
+- **Fix or workaround:** Continued directly on the existing remote rather than creating a duplicate repository.
+
+### Production bearer token replaced with a 64-character hex string
+- **What happened** (25 Oct): Initial deployment used the development placeholder `kola-local-dev-token` from `.env.example`. While convenient locally, using a predictable placeholder on a public HTTPS URL (`https://kola-gadgets-mcp.onrender.com/mcp`) is poor hygiene.
+- **How I found the cause:** Reviewing public endpoint security prior to registering the custom tool in Chord.
+- **Fix or workaround:** Generated a 32-byte (64-character) random hex string via `openssl rand -hex 32` (`fea10a7c...`) and saved it as `MCP_BEARER_TOKEN` in Render's dashboard. Kept `kola-local-dev-token` in local `.env` so local testing remains distinct from production. Verified old token receives 401 and new token receives 200.
 
 

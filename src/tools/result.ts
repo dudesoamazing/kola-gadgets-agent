@@ -35,17 +35,58 @@ function asContent(payload: Record<string, unknown>) {
 }
 
 /**
- * Last line of defence. A tool must not throw at Chord — an unhandled error
- * becomes a transport-level failure the skill has no wording for.
+ * Strips secrets and personal data before logging error messages.
+ * Account codes are preserved; PINs, pickup codes, references, phones, and tokens are redacted.
+ */
+function safeErrorSnippet(error: string, rawMessage?: unknown): string {
+  if (typeof rawMessage !== "string" || !rawMessage) {
+    return error;
+  }
+  let clean = rawMessage
+    .replace(/\bKG-\d{8}-[A-Za-z0-9]+\b/gi, "[ref]")
+    .replace(/\b\d{6}\b/g, "[code]")
+    .replace(/\b\d{4}\b/g, "[pin]")
+    .replace(/\b[0-9]{11}\b/g, "[phone]")
+    .replace(/\bsk_(live|test)_[A-Za-z0-9]+\b/g, "[key]")
+    .replace(/\bBearer\s+[A-Za-z0-9_-]+/gi, "Bearer [token]")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (clean.length > 80) {
+    clean = clean.slice(0, 77) + "...";
+  }
+  return `${error}: ${clean}`;
+}
+
+/**
+ * Last line of defence. Logs one line per call (ISO timestamp, tool name,
+ * duration in ms, and ok/error with short message). A tool must not throw
+ * at Chord — an unhandled error becomes a transport-level failure the skill
+ * has no wording for.
  */
 export async function guard<T>(
+  toolName: string,
   run: () => Promise<T>,
 ): Promise<T | ReturnType<typeof fail>> {
+  const start = Date.now();
   try {
-    return await run();
+    const result = await run();
+    const duration = Date.now() - start;
+    const iso = new Date().toISOString();
+    const structured = (result as { structuredContent?: Record<string, unknown> })?.structuredContent;
+    if (structured && structured.ok === false) {
+      const errCode = typeof structured.error === "string" ? structured.error : "error";
+      const errDetail = safeErrorSnippet(errCode, structured.message);
+      console.log(`${iso} ${toolName} ${duration}ms error: ${errDetail}`);
+    } else {
+      console.log(`${iso} ${toolName} ${duration}ms ok`);
+    }
+    return result;
   } catch (error) {
+    const duration = Date.now() - start;
     const detail = error instanceof Error ? error.message : String(error);
-    console.error("[tool] unhandled error:", detail);
+    const safeDetail = safeErrorSnippet("ledger_unreachable", detail);
+    console.log(`${new Date().toISOString()} ${toolName} ${duration}ms error: ${safeDetail}`);
     return fail(
       "ledger_unreachable",
       `The ledger or payment system could not be reached: ${detail}. Nothing was changed.`,

@@ -165,7 +165,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       annotations: { readOnlyHint: true },
     },
     async ({ account_code, pin }) =>
-      guard(async () => {
+      guard("identify", async () => {
         const sender = await authenticated(ledger(), account_code, pin);
         if ("error" in sender) return sender.error;
         return ok({
@@ -186,7 +186,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       annotations: { readOnlyHint: true },
     },
     async ({ account_code, pin }) =>
-      guard(async () => {
+      guard("get_reseller_balance", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
@@ -233,7 +233,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       annotations: { readOnlyHint: true },
     },
     async ({ account_code, pin, invoice_id }) =>
-      guard(async () => {
+      guard("check_invoice_status", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
@@ -295,7 +295,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       },
     },
     async ({ account_code, pin, invoice_ids, amount_ngn }) =>
-      guard(async () => {
+      guard("create_payment_link", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
@@ -473,7 +473,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       },
     },
     async ({ account_code, pin, reference }) =>
-      guard(() =>
+      guard("verify_payment", () =>
         withReferenceLock(reference, async () => {
           const db = ledger();
           const sender = await authenticated(db, account_code, pin);
@@ -660,7 +660,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       annotations: { readOnlyHint: true },
     },
     async ({ account_code, pin }) =>
-      guard(async () => {
+      guard("get_pickup_codes", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
@@ -716,7 +716,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       },
     },
     async ({ account_code, pin, pickup_code }) =>
-      guard(async () => {
+      guard("record_handover", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;
@@ -832,7 +832,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
       },
     },
     async ({ account_code, pin, invoice_id, summary }) =>
-      guard(async () => {
+      guard("flag_for_owner", async () => {
         const db = ledger();
         const sender = await authenticated(db, account_code, pin);
         if ("error" in sender) return sender.error;

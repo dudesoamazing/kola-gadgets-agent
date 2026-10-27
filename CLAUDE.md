@@ -19,9 +19,9 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 | **22 Oct** | Told credits were added — the 5-day clock started |
 | **25 Oct** | Briefly blocked on credits and simulator access; emailed TSG (`docs/tsg-blocker-email.md`). **Resolved same day** — first real simulator conversation ran against the live MCP server |
 | 22–25 Oct | Marvin travelling (speaking at DevFest Akure) |
-| **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment setup started |
-| **Mon 26 Oct, evening** | **Submit** — deliberately a night early |
-| **Tue 27 Oct, ~13:30** | Hard deadline (5 days from credits) |
+| **25 Oct** | GitHub remote created and pushed (`dudesoamazing/kola-gadgets-agent`); Render deployment live with public HTTPS and 64-char bearer token |
+| **27 Oct** | **Credits received, simulator connected, paths 1–2 tested** (greeting, identification with code/PIN, balance check against live Sheet). Investigated cold-start escalation to human, credit deduction rounding, dark-mode button contrast, and skill sync |
+| **Tue 27 Oct, evening** | **Submit** — finalize recording, field notes, and repo |
 
 Submit Monday night, not Tuesday lunchtime. The buffer is for the things that only break on the day.
 
@@ -224,7 +224,7 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Build MCP server (`src/`), tested locally — `npm run smoke` drives all eight tools over real MCP HTTP, 110 assertions
 - [x] README drafted (`README.md`) — how to run, the eight tools, how AI tools were used
 - [x] Deploy to public HTTPS — live on Render (`https://kola-gadgets-mcp.onrender.com`); verified from outside end to end on 25 Oct: `/health` ok on the Sheets backend, all eight tools, bearer auth enforced, real Sheet reads, and a real Paystack link created from Render. Production token swapped off the dev placeholder
-- [ ] Sign up to Chord; explore Tools panel and skill upload (no credits needed)
+- [x] Sign up to Chord; explore Tools panel and skill upload (completed)
 - [x] Multiple phones per reseller account — solved outright by dropping phone identity on 22 Oct; a code works from any device
 - [x] `verify_payment` refuses a reference from another account; staff and the owner may verify any
 - [x] **Identity rebuilt on account code + PIN (22 Oct)** after TSG confirmed Chord passes no sender identity: `identify` replaces `get_sender_role`, every tool takes `account_code` + `pin` and re-checks on every call, PIN never echoed, five misses flag the owner. Skill, seed data, smoke tests and field notes updated
@@ -232,8 +232,8 @@ Scoring: Integration 25%, Field notes 25%, Problem choice 20%, Customer thinking
 - [x] Problem statement and go-live note drafted (`docs/`) — revisit after Chord testing. Go-live note covers issuing codes and PINs
 - [x] **Pickup codes (23 Oct)** — `pickup_code` on Invoices, minted by `verify_payment` only on full settlement, `get_pickup_codes` for resellers, `record_handover` works from the code, 3 wrong codes locks that staff account. Skill, examples, seed data, smoke tests and go-live note updated
 - [x] **Unbroken click-through proven on real Paystack test mode (25 Oct)** — `create_payment_link` on production issued `checkout.paystack.com/f35kw562fpz24nn`, Marvin opened and paid it with the test card in a browser, `verify_payment` returned `success` (channel `card`), applied ₦310,000, marked INV-109 paid and minted pickup code; a repeat verify did not re-apply; staff released against the code and were refused the second time. Beats and timings in `docs/recording-script.md`
-- [x] Chord account email sent; credits added 22 Oct
-- [~] Register MCP server, upload skill, test every path in the simulator — **registered and running 25 Oct.** First `show tools` failed with `gateway request failed 500` (cold free-tier server); retry worked. Skill is live: the agent asks for code and PIN, calls `identify`, and lists Ada's three invoices totalling ₦4,360,000 from the real Sheet. Two findings fixed/logged — Markdown passed raw to WhatsApp, and the simulator's self-declared display name. **Still to run: "send acct dets", the payment, and the staff release**
+- [x] Chord credits received 27 Oct; MCP server registered and tools discovered
+- [~] Test every path in the simulator — **simulator connected, paths 1–2 tested (27 Oct)**: greeting, identification with account code + PIN, and balance checks against live Sheet. Investigated silent cold-start escalation to human, added request logging, kept server awake via UptimeRobot. Still to run: payment link creation, test-card payment in browser, and staff release demo
 - [ ] Record, finish field notes, submit
 - [ ] **Contingency if Chord access doesn't arrive:** record against the MCP server directly (Inspector or curl) showing the same eight tools and the real Paystack + Sheet chain, screenshot the Chord Tools panel listing the tools as proof the integration is registered, and say plainly in the submission what was blocked, when it was reported and what would have been shown. The brief explicitly allows this — "submit a working demo that shows what you had in mind, along with a note covering what stopped you"
 

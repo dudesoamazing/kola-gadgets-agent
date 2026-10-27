@@ -346,6 +346,36 @@ async function main(): Promise<void> {
       applied.total_outstanding_ngn,
     );
 
+    const inv104Applied = applied.applied_to?.[0];
+    const inv109Applied = applied.applied_to?.[1];
+    check(
+      "INV-104 was already collected so collected is true and has explanation note",
+      inv104Applied?.collected === true &&
+        typeof inv104Applied?.note === "string" &&
+        inv104Applied.note.includes("Already collected on credit"),
+      inv104Applied,
+    );
+    check(
+      "INV-104 has no pickup code",
+      inv104Applied?.pickup_code === undefined,
+      inv104Applied?.pickup_code,
+    );
+    check(
+      "INV-109 was uncollected so collected is false and receives a 6-digit pickup code",
+      inv109Applied?.collected === false &&
+        typeof inv109Applied?.pickup_code === "string" &&
+        /^\d{6}$/.test(inv109Applied.pickup_code),
+      inv109Applied,
+    );
+    check(
+      "summary_for_reply is present and explains settled vs pickup code and new balance",
+      typeof applied.summary_for_reply === "string" &&
+        applied.summary_for_reply.includes("settled, collected earlier") &&
+        applied.summary_for_reply.includes("pickup code") &&
+        applied.summary_for_reply.includes("₦1,650,000"),
+      applied.summary_for_reply,
+    );
+
     // ------------------------------------------- the double-apply guard ----
     section("Verifying twice must not pay twice");
     const again = await call("verify_payment", { ...ADA, reference });

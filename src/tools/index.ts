@@ -459,7 +459,40 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
   );
 
   // --------------------------------------------------------------- verify ---
-  // --------------------------------------------------------------- verify ---
+  function buildSummaryForReply(
+    amountNgn: number,
+    reference: string,
+    appliedList: Array<Record<string, unknown>>,
+    newOutstandingNgn: number,
+  ): string {
+    const lines: string[] = [
+      `Payment of ${naira(amountNgn)} confirmed (ref ${reference}).`,
+    ];
+    for (const item of appliedList) {
+      const invId = String(item.invoice_id ?? "");
+      const invItems = String(item.items ?? "");
+      const isCollected = Boolean(item.collected);
+      const code = item.pickup_code ? String(item.pickup_code) : "";
+      const status = String(item.now_status ?? "");
+
+      if (status === "paid") {
+        if (isCollected) {
+          lines.push(`- ${invId} (${invItems}): settled, collected earlier.`);
+        } else if (code) {
+          lines.push(`- ${invId} (${invItems}): paid, pickup code ${code} for ${invItems}.`);
+        } else {
+          lines.push(`- ${invId} (${invItems}): settled in full.`);
+        }
+      } else {
+        const remaining = String(item.outstanding_display ?? naira(Number(item.outstanding_ngn ?? 0)));
+        lines.push(`- ${invId} (${invItems}): part-paid, ${remaining} still outstanding.`);
+      }
+    }
+
+    lines.push(`Total outstanding balance is now ${naira(newOutstandingNgn)}.`);
+    return lines.join("\n");
+  }
+
   server.registerTool(
     "verify_payment",
     {
@@ -503,6 +536,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           gateway_response?: string;
           error?: string;
           note: string;
+          summary_for_reply?: string;
         };
 
         const verifySingle = async (payment: Payment): Promise<SingleResult> => {
@@ -607,7 +641,12 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
                 now_status: settledNow ? "paid" : "part_paid",
                 outstanding_ngn: nowOutstanding,
                 outstanding_display: naira(nowOutstanding),
+                collected: invoice.collected,
+                ...(invoice.collected && invoice.collected_at ? { collected_at: invoice.collected_at } : {}),
                 safe_to_release: settledNow && !invoice.collected,
+                ...(invoice.collected
+                  ? { note: "Already collected on credit; this payment settles it. No pickup code is needed." }
+                  : {}),
                 ...(settledNow && !invoice.collected && pickupCode !== ""
                   ? { pickup_code: pickupCode }
                   : {}),
@@ -638,7 +677,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
               applied_to: appliedList,
               unallocated_ngn: unallocatedNgn,
               flagged_for_owner: unallocatedNgn > 0,
-              note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Nothing is released without it. A part-paid invoice has no code and must not be collected.",
+              note: "Confirmed. Report the amount, the reference, which invoices are now paid, and what is still outstanding. Any invoice carrying a pickup_code is now ready to collect: give the reseller that code and tell them to show it at the shop. Invoices marked collected: true were already collected on credit and need no pickup code. A part-paid invoice has no code and must not be collected.",
             };
           });
         };
@@ -673,9 +712,20 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
 
           const remaining = await db.listInvoicesForAccount(payment.account_id);
           const stillOwed = remaining.filter(isUnsettled);
+          const newOutstandingNgn = stillOwed.reduce((sum, inv) => sum + outstandingNgn(inv), 0);
+          const summaryForReply =
+            outcome.payment_status === "success" && outcome.applied
+              ? buildSummaryForReply(
+                  outcome.amount_ngn,
+                  outcome.reference,
+                  outcome.applied_to ?? [],
+                  newOutstandingNgn,
+                )
+              : undefined;
 
           return ok({
             ...outcome,
+            ...(summaryForReply ? { summary_for_reply: summaryForReply } : {}),
             remaining_balance: stillOwed.map(invoiceView),
             ...creditSummary(stillOwed),
           });
@@ -736,10 +786,23 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         const remaining = await db.listInvoicesForAccount(person.account_id);
         const stillOwed = remaining.filter(isUnsettled);
 
+        const newOutstandingNgn = stillOwed.reduce((sum, inv) => sum + outstandingNgn(inv), 0);
+
         if (outcomes.length === 1) {
-          const single = outcomes[0];
+          const single = outcomes[0]!;
+          const summaryForReply =
+            single.payment_status === "success" && single.applied
+              ? buildSummaryForReply(
+                  single.amount_ngn,
+                  single.reference,
+                  single.applied_to ?? [],
+                  newOutstandingNgn,
+                )
+              : undefined;
+
           return ok({
             ...single,
+            ...(summaryForReply ? { summary_for_reply: summaryForReply } : {}),
             payments: outcomes.map((o) => ({
               reference: o.reference,
               status: o.payment_status,
@@ -753,6 +816,16 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         }
 
         const firstOutcome = outcomes[0]!;
+        const summaryForReply =
+          succeeded.length > 0
+            ? buildSummaryForReply(
+                totalPaidNgn,
+                succeeded[0]?.reference ?? firstOutcome.reference,
+                allApplied,
+                newOutstandingNgn,
+              )
+            : undefined;
+
         return ok({
           reference: succeeded[0]?.reference ?? firstOutcome.reference,
           payment_status: succeeded.length > 0 ? "success" : firstOutcome.payment_status,
@@ -760,6 +833,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           already_applied: false,
           amount_ngn: totalPaidNgn,
           amount_display: naira(totalPaidNgn),
+          ...(summaryForReply ? { summary_for_reply: summaryForReply } : {}),
           payments: outcomes.map((o) => ({
             reference: o.reference,
             status: o.payment_status,

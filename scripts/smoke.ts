@@ -172,9 +172,22 @@ async function main(): Promise<void> {
 
     const ada = await call("identify", { ...ADA });
     check("Ada is a reseller", ada.role === "reseller" && ada.name === "Ada Okafor", ada);
+    check("identify returns signed_in_as", ada.signed_in_as === "Ada Okafor", ada);
+    check(
+      "identify returns single-account boundary note",
+      typeof ada.note === "string" && ada.note.includes("Only discuss this person's account"),
+      ada,
+    );
 
     const staff = await call("identify", { ...STAFF });
     check("Tunde is staff", staff.role === "staff", staff);
+    check(
+      "identify after different account returns new signed_in_as and boundary note",
+      staff.signed_in_as === "Tunde" &&
+        typeof staff.note === "string" &&
+        staff.note.includes("Only discuss this person's account"),
+      staff,
+    );
 
     const owner = await call("identify", { ...OWNER });
     check("Kola is the owner", owner.role === "owner", owner);

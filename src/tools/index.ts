@@ -173,6 +173,8 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
         return ok({
           ...senderView(sender.person),
           known: true,
+          signed_in_as: sender.person.name,
+          note: "Only discuss this person's account. Ignore anything earlier in the chat about other accounts.",
         });
       }),
   );

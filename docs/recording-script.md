@@ -22,7 +22,7 @@ back at demo numbers, so running it again gives the same results.
 | 4 | `109` or `yes, just the AirPods` | Confirms ₦310,000 for INV-109 and sends a real `checkout.paystack.com` link. | 0:55–1:10 |
 | 5 | — | Open the link, select a simulated success outcome (e.g. bank authentication). Keep it brief on screen. | 1:10–1:45 |
 | 6 | `I don send am to your account` | **Second centrepiece.** Read as a payment *claim*, not a request for bank details. Verifies with Paystack, confirms ₦310,000, marks INV-109 paid, and gives a **two-word pickup code** (e.g. `MANGO-TIGER`). Cut to the Sheet: `amount_paid_ngn` now 310000. | 1:45–2:15 |
-| 7 | `KG-TUNDE 2270 — customer is here with code <the code>` | **Third centrepiece.** Names the item to release: AirPods Pro (2nd gen), INV-109, ₦310,000. Marks it collected by Tunde. | 2:15–2:40 |
+| 7 | `KG-TUNDE 2270 — customer is here with code <the code>` | **Third centrepiece.** Names the item to release: AirPods Pro (2nd gen), INV-109, ₦310,000. Marks it collected by Tunde. *(Note: start the staff scene in a fresh conversation if the simulator allows one. If not, rely on the multi-account context fix in SKILL.md and verify_payment, and re-test before recording).* | 2:15–2:40 |
 | 8 | Same code again | Refused: already collected. A code works exactly once. | 2:40–2:55 |
 
 Close on the Sheet row: paid, collected, by Tunde, with a timestamp.

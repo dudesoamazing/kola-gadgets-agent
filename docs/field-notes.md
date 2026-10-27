@@ -137,6 +137,14 @@ Template for each note:
 - **Fix or workaround:** Made `reference` optional on `verify_payment`. When omitted, the server looks up the authenticated account's payments in the Payments tab with status `pending` (newest first) and verifies each with Paystack. State lives in the ledger, not in the model's turn-by-turn memory. Also updated `SKILL.md` to instruct the agent to leave the reference out if it doesn't have it, and never tell the reseller it cannot check due to a missing reference.
 - **What Chord should change:** Keep tool results in the conversation context across turns, or document clearly that they are dropped between turns. Any multi-step tool pattern (such as create link, wait for user action, verify later) is broken if tools require IDs returned in previous turns.
 
+### Simulator allows only one profile per agent, causing cross-account context bleeding
+- **What happened** (27 Oct, 8:16pm WAT): In the Chord simulator, immediately following Ada's session, I signed in as staff (`KG-TUNDE`) within the same chat. `record_handover` worked as expected: the AirPods Pro were released against INV-109, logged under Tunde, and the pickup code was spent. However, the agent's reply then addressed Ada (*"Ada: I need to correct what I told you earlier…"*) and revealed Ada's ₦4,360,000 payment details, invoice status, and unissued codes directly to Tunde.
+- **How I found the cause:** The Chord simulator supports only a single user profile per agent (confirmed with TSG), with no reset or "new conversation" button. Consequently, testing both reseller and staff workflows requires switching identities inside one continuous chat history. The LLM retained earlier context from Ada's session and carried her private financial details over into Tunde's session.
+- **Fix or workaround:**
+  1. Updated `SKILL.md`: Added a rule stating that when a different account signs in, everything earlier in the chat belonged to someone else. Do not mention it, do not address the prior person, and do not carry over their invoices, payments, or codes. Speak only to the person now signed in, about their own account or role.
+  2. Server reinforcement in `identify`: The response now includes `signed_in_as` and an explicit note: *"Only discuss this person's account. Ignore anything earlier in the chat about other accounts."*
+- **What Chord should change:** Support several simulator profiles, or provide a "New conversation" / "Clear history" button, so multi-role agents can be tested without cross-session context bleeding.
+
 ---
 
 ## Setup issues outside Chord

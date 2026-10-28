@@ -14,6 +14,7 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | The skill | [`skill/kola-gadgets-payments/`](skill/kola-gadgets-payments/) |
 | The MCP server | [`src/`](src/) |
 | Seed ledger data | [`data/`](data/) |
+| Security and identity design | [`docs/security.md`](docs/security.md) |
 | Deployment field notes | [`docs/field-notes.md`](docs/field-notes.md) |
 | Go-live note for the owner | [`docs/go-live-note.md`](docs/go-live-note.md) |
 
@@ -30,15 +31,32 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | `record_handover` | staff, owner | Releases goods against a pickup code — names the item, marks it collected, spends the code |
 | `flag_for_owner` | anyone | Adds a line to the Flags tab for Kola to look at |
 
-Three rules the code enforces, not just the prompt:
+Key rules the code enforces, not just the prompt:
 
 - **Only `verify_payment` can mark an invoice paid.** Nothing else writes `amount_paid_ngn`. No one can talk their way into it not even staff or someone claiming to be staff.
 - **Verifying the same reference twice never applies the money twice.** The payment row is the record; once it reads `success` with a timestamp, a repeat call reports the existing confirmation instead. Simultaneous calls are serialised per reference.
 - **Roles come from the ledger's People tab.** Never from what someone says in the chat.
-- **No code, no goods.** A verified payment that clears an invoice in full mints a unique two-word pickup code (e.g. `MANGO-TIGER`); older invoices may still carry 6 digits. Staff release only against it. **No tool ever shows a code to staff** `invoiceView` has no such field, and `get_pickup_codes` returns one only to the reseller who paid. Three wrong codes lock handovers from that staff account and flag the owner. Copied from how Computer Village already works, so nobody at the counter has to be retrained.
+- **No code, no goods.** A verified payment that clears an invoice in full mints a unique two-word pickup code (e.g. two words joined by a hyphen); older invoices may still carry 6 digits. Staff release only against it. **No tool ever shows a code to staff** `invoiceView` has no such field, and `get_pickup_codes` returns one only to the reseller who paid. Three wrong codes lock handovers from that staff account and flag the owner. Copied from how Computer Village already works, so nobody at the counter has to be retrained.
 - **Identity is proven, not inferred.** Chord passes no sender identity to a teammate or its tools; no phone number, nothing (confirmed by TSG, 22 Oct). So every person has an owner-issued account code and a 4-digit PIN, and **every tool re-checks both on every call**; there is no session, because there is no handle to key one on. An unknown code and a wrong PIN return the same message, so the agent can't be used to find out which codes are live. The PIN never leaves the ledger layer and never reaches the model.
 
 Every tool returns readable JSON with an `ok` flag, and failures come back as codes the skill has wording for (`not_permitted`, `not_found`, `paystack_unreachable`, `not_fully_paid`…) rather than as exceptions. An error Chord can't read is an error the agent will improvise around.
+
+## Security and identity
+
+Full architectural details, threat analysis, and production tooling are documented in [`docs/security.md`](docs/security.md). In brief:
+
+- **How identity works today:** Every tool call carries an account code (`KG-ADA`) and a 4-digit PIN. The server checks them against the ledger on every call (using constant-time comparison) and never trusts an earlier sign-in. Saying "I'm staff" or "I'm Ada" in the chat changes nothing. A wrong code or PIN reveals nothing, not even whether the code exists. 5 failed attempts flag the owner (they don't lock the account yet).
+- **Why code + PIN:** Chord does not pass the sender's WhatsApp number to the agent or to MCP tools (confirmed by TSG on 22 Oct), so phone-based identity was impossible.
+- **The model cannot release goods:** Release happens strictly on the server via `record_handover`, against a one-time pickup code minted by a verified Paystack payment and shown only to the reseller who paid. In testing, the server refused codes the model made up (28 Oct; see field notes).
+- **Known limits, stated honestly:**
+  1. *Plain-text PINs in demo:* The demo Google Sheet stores PINs in plain text, and they are visible in the People tab in the recording. In production they would be stored as a salted slow hash (scrypt) combined with a server-side secret (a pepper held only in the host's environment variables, never in the Sheet). A 4-digit PIN has only 10,000 values ($0000$–$9999$), so a plain hash can be reversed in under a second; the pepper is what protects it.
+  2. *Leaked PIN blast radius:* A leaked PIN lets someone act as that reseller, including retrieving their pickup codes for paid items.
+  3. *Chat history exposure:* PINs are typed into the chat, so they also sit in the chat history, in Chord and in the model's context. Hashing the Sheet doesn't fix that. The real fix is binding each account to the sender's WhatsApp number once Chord passes it, with the PIN as a second factor.
+- **Next steps for production:**
+  - Lock an account after repeated wrong PINs (with owner unlock).
+  - Owner-only administrative tools to replace hand-editing the Sheet: proposed `add-account` (shows a new PIN once, stores only the hash) and `reset-pin` (same). Described in [`docs/security.md`](docs/security.md).
+  - Hashed and peppered PINs as above.
+  - Pickup codes that expire if unused (e.g. after 7 days).
 
 ## Running it
 

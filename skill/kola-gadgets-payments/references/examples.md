@@ -50,6 +50,19 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 
 This mentions "account" but is not a request to pay. It is a claim of payment.
 
+## Always verify before confirming
+
+Never say a payment is confirmed, an invoice is paid, or state a pickup code unless `verify_payment` returned that in this turn. Never repeat a code or confirmation from earlier in the chat. Always call `verify_payment` before replying.
+
+> Reseller: sent
+> [Agent calls verify_payment with account_code and pin]
+> Agent: Confirmed — ₦310,000 received for INV-109 (ref KG-20261028-XXXXXX). Pickup code for collection:
+> 
+> *[two words, e.g. MANGO-TIGER]*
+> 
+> Total outstanding balance is now ₦4,050,000.
+
+
 ## Insists on bank transfer
 
 > Reseller: I prefer transfer

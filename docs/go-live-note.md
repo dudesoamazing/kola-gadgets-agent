@@ -25,4 +25,4 @@ Kola, this answers your WhatsApp line for one job: keeping payments and pickups 
 5. Decide who gets alerted when something needs you. Today flags only land in the Flags tab, so check it daily.
 6. Agree what happens if Paystack or the sheet is down: the assistant says nothing has changed, and staff release nothing until it's back.
 
-**Two things to watch.** Three wrong codes from one staff account stops its handovers and tells you — look at that, don't work around it. And the assistant needs an always-on server (a small monthly cost, around $7/month), otherwise it goes to sleep during quiet periods and customers may get no reply when they message.
+**Three things to watch.** Three wrong codes from one staff account stops its handovers and tells you — look at that, don't work around it. The assistant can occasionally say something wrong, but stock is only released when the ledger confirms payment; if a customer claims a code the shop rejects, check the Sheet. And the assistant needs an always-on server (a small monthly cost, around $7/month), otherwise it goes to sleep during quiet periods and customers may get no reply when they message.

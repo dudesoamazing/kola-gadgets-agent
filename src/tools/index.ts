@@ -455,7 +455,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
           expires_in_hours: config.paystack.linkExpiryHours,
           paystack_mode: config.paystack.mode,
           next_step:
-            "Send the link with the amount and invoice numbers. Ask them to tell you once they have paid, then call verify_payment (the reference is optional). Nothing is paid until that returns success.",
+            "Send the link with the amount and invoice numbers. Ask them to tell you once they have paid. When they say they've paid, you must call verify_payment. Never confirm a payment or give a code from this result.",
         });
       }),
   );

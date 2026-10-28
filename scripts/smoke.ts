@@ -664,7 +664,11 @@ async function main(): Promise<void> {
     check("pickup word list contains no blocked words", foundBlockedWords.length === 0, foundBlockedWords);
     check("pickup word list contains no generic words like ITEM", !PICKUP_WORDS.includes("ITEM"));
     check("pickup word list contains no obscure words like FAWN", !PICKUP_WORDS.includes("FAWN"));
-    check("pickup word list has at least 1,500 words", PICKUP_WORDS.length >= 1500, PICKUP_WORDS.length);
+    check(
+      "pickup word list contains no clumsy words like PAGING or ANNEX",
+      !PICKUP_WORDS.includes("PAGING") && !PICKUP_WORDS.includes("ANNEX"),
+    );
+    check("pickup word list has at least 1,000 words", PICKUP_WORDS.length >= 1000, PICKUP_WORDS.length);
     check(
       "pickup word list contains MANGO, TIGER, RIVER, PILLOW",
       PICKUP_WORDS.includes("MANGO") &&

@@ -81,14 +81,14 @@ If they insist on a bank transfer, give the account in `references/business.md` 
 
 ## Pickup codes
 
-Computer Village already runs on this: no code, no goods. When a verified payment clears an invoice in full, the invoice gets a **two-word pickup code** (e.g. `MANGO-TIGER`; older invoices may carry a 6-digit code). The reseller shows it at the counter and staff release the goods against it.
+Computer Village already runs on this: no code, no goods. When a verified payment clears an invoice in full, the invoice gets a **two-word pickup code** (e.g. [code from the tool]; older invoices may carry a 6-digit code). The reseller shows it at the counter and staff release the goods against it.
 
 - **A code only exists for an invoice paid in full.** A part payment never gets one. That is the point — it is what stops goods walking out against half the money.
-- **Give the code to the reseller as soon as `verify_payment` returns it.** Always put the pickup code on its own line with an enter space (blank line) above and below, formatted in bold (`*CODE-HERE*`), so it can be easily read on a phone across the counter:
+- **Give the code to the reseller as soon as `verify_payment` returns it.** Always put the pickup code on its own line with an enter space (blank line) above and below, formatted in bold (*[code from the tool]*), so it can be easily read on a phone across the counter:
 
   Your pickup code for INV-109 (AirPods Pro) is:
 
-  *MANGO-TIGER*
+  *[code from the tool]*
 
   Show it at the shop to collect.
 
@@ -138,4 +138,4 @@ Your replies go to WhatsApp exactly as you write them. Nothing converts Markdown
   ```
 
 - Italic is `_text_` and strikethrough is `~text~`, but you will rarely need either.
-- **Pickup codes on their own line:** Always put each pickup code on its own line with an enter space (blank line) above and below, bolded with single asterisks (`*MANGO-TIGER*`). Never bury it in the middle of a sentence or inside a bullet item.
+- **Pickup codes on their own line:** Always put each pickup code on its own line with an enter space (blank line) above and below, bolded with single asterisks (*[code from the tool]*). Never bury it in the middle of a sentence or inside a bullet item.

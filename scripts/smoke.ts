@@ -674,6 +674,34 @@ async function main(): Promise<void> {
     );
     check("all pickup words are 3 to 6 uppercase letters", PICKUP_WORDS.every((w) => /^[A-Z]{3,6}$/.test(w)));
 
+    // Ensure no literal example pickup codes leak into the skill files
+    const skillDir = path.resolve("skill");
+    const skillFiles: string[] = [];
+    function collectSkillMd(dirPath: string) {
+      for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+        const full = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) collectSkillMd(full);
+        else if (entry.name.endsWith(".md")) skillFiles.push(full);
+      }
+    }
+    collectSkillMd(skillDir);
+    const leakedCodes: string[] = [];
+    const wordWordRegex = /\b[A-Z]{2,}-[A-Z0-9]{2,}\b/g;
+    for (const f of skillFiles) {
+      const content = fs.readFileSync(f, "utf8");
+      const matches = content.match(wordWordRegex) ?? [];
+      for (const m of matches) {
+        if (!m.startsWith("KG-") && !m.startsWith("INV-") && !m.startsWith("ACC-")) {
+          leakedCodes.push(`${path.basename(f)}: ${m}`);
+        }
+      }
+    }
+    check(
+      "no file in skill/ contains a WORD-WORD pattern apart from KG-, INV- and ACC- identifiers",
+      leakedCodes.length === 0,
+      leakedCodes,
+    );
+
     const spentCode = await call("get_pickup_codes", { ...ADA });
     check(
       "a collected invoice drops off the ready-to-collect list",

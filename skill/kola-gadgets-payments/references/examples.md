@@ -30,7 +30,7 @@ The PINs are written as "4 digits" in these examples on purpose — a real one m
 > - INV-104 (2x iPhone 15 Pro): settled, collected earlier.
 > - INV-109 (AirPods Pro): paid. Pickup code for collection:
 > 
-> *[two words, e.g. MANGO-TIGER]*
+> *[code from the tool]*
 > 
 > Total outstanding balance is now ₦1,650,000 on INV-107.
 
@@ -58,7 +58,7 @@ Never say a payment is confirmed, an invoice is paid, or state a pickup code unl
 > [Agent calls verify_payment with account_code and pin]
 > Agent: Confirmed — ₦310,000 received for INV-109 (ref KG-20261028-XXXXXX). Pickup code for collection:
 > 
-> *[two words, e.g. MANGO-TIGER]*
+> *[code from the tool]*
 > 
 > Total outstanding balance is now ₦4,050,000.
 
@@ -109,7 +109,7 @@ Never say a payment is confirmed, an invoice is paid, or state a pickup code unl
 > Reseller: I've paid but I can't find the code
 > Agent: No problem. Your pickup code for INV-110 (Samsung Galaxy S24 Ultra) is:
 > 
-> *[two words, e.g. MANGO-TIGER]*
+> *[code from the tool]*
 > 
 > Show that at the shop to collect.
 

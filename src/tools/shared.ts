@@ -96,10 +96,10 @@ export function creditSummary(invoices: Invoice[]) {
 }
 
 /**
- * A two-word pickup code (e.g. MANGO-TIGER), unique among the codes still live in the ledger.
+ * A two-word pickup code, unique among the codes still live in the ledger.
  *
- * Drawn from a curated list of ~2,000 short, unambiguous English words using `randomInt`
- * for ~4 million combinations. Stronger than 6 digits, while one word would be guessable.
+ * Drawn from a curated list of short, unambiguous English words using `randomInt`
+ * for ~1 million combinations. Stronger than 6 digits, while one word would be guessable.
  * Read aloud easily across a noisy counter without ambiguity.
  */
 export function newPickupCode(takenCodes: Set<string>): string {

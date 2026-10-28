@@ -96,6 +96,6 @@ Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `h
 
 ## How AI tools were used
 
-Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls: what counts as proof of payment, oldest-invoice-first, who can mark what. Then I had Claude build to them, then pushed back where the first pass was too loose. Cursor for smaller edits. The skill is mine; the tone and the payment-intent rules are the part I didn't want a model guessing at.
+Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls: what counts as proof of payment, oldest-invoice-first, who can mark what. Then I had Claude build them, then pushed back where the first pass was too loose. Gemini in Antigravity was then used for quick edits, iterations for smaller fixes and running smoke tests. The skill is mine; the tone and the payment-intent rules are the part I didn't want AI guessing at.
 
 One example of the back-and-forth being worth it: the first smoke test failed on "staff cannot release a part-paid invoice" because the invoice I picked had already gone out on credit, so the agent warned about the handover instead of the balance. The code was right and my test was wrong. That precedence (*you already gave this away* beats *this isn't paid yet*) is now asserted on purpose.

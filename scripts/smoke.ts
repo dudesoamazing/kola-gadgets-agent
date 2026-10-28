@@ -166,6 +166,41 @@ async function main(): Promise<void> {
       names,
     );
 
+    const toolLeaks: string[] = [];
+    const toolWordWordRegex = /\b[A-Z]{2,}-[A-Z0-9]{2,}\b/g;
+    const toolSixDigitRegex = /\b\d{6}\b/g;
+
+    function checkTextForToolLeaks(location: string, text: string | undefined) {
+      if (!text) return;
+      const wordMatches = text.match(toolWordWordRegex) ?? [];
+      for (const m of wordMatches) {
+        if (!m.startsWith("KG-") && !m.startsWith("INV-") && !m.startsWith("ACC-")) {
+          toolLeaks.push(`${location}: pattern "${m}"`);
+        }
+      }
+      const digitMatches = text.match(toolSixDigitRegex) ?? [];
+      for (const m of digitMatches) {
+        toolLeaks.push(`${location}: 6-digit number "${m}"`);
+      }
+    }
+
+    for (const tool of tools.tools) {
+      checkTextForToolLeaks(`${tool.name} description`, tool.description);
+      const schema = tool.inputSchema as { description?: string; properties?: Record<string, { description?: string }> };
+      checkTextForToolLeaks(`${tool.name} schema description`, schema?.description);
+      if (schema?.properties) {
+        for (const [propName, prop] of Object.entries(schema.properties)) {
+          checkTextForToolLeaks(`${tool.name}.${propName} description`, prop.description);
+        }
+      }
+    }
+
+    check(
+      "no tool description or parameter description contains a WORD-WORD pattern or 6-digit code",
+      toolLeaks.length === 0,
+      toolLeaks,
+    );
+
     // -------------------------------------------------------------- roles ---
     section("Roles come from the ledger");
     const unknown = await call("identify", { account_code: "KG-NOBODY", pin: "0000" });

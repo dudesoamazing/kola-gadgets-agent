@@ -2,7 +2,7 @@
 
 A WhatsApp agent for a phone and laptop supplier in Computer Village, Lagos. It ties every payment to a specific invoice, verifies it through Paystack and lets shop staff confirm payment before releasing stock, without anyone needing access to the owner's bank account.
 
-Built on Chord for the TSG Labs build exercise. The problem, the design decisions and what was left out are in [`docs/problem-statement.md`](docs/problem-statement.md).
+Built on Chord for the TSG Labs build exercise. The design decisions are below. What I'd build next is at the end of [`docs/field-notes.md`](docs/field-notes.md).
 
 ```
 WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google Sheet (the ledger)
@@ -143,6 +143,6 @@ Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `h
 
 ## How AI tools were used
 
-Claude Code wrote most of this server from `CLAUDE.md`, which I wrote first: the problem, the roles, the tools and the rules they had to enforce. I made the design calls: what counts as proof of payment, oldest-invoice-first, who can mark what. Then I had Claude build them, then pushed back where the first pass was too loose. Gemini in Antigravity was then used for quick edits, iterations for smaller fixes and running smoke tests. The skill is mine; the tone and the payment-intent rules are the part I didn't want AI guessing at.
+Claude Code wrote the core of this server after I set up `CLAUDE.md`, which covers the problem, the roles, the tools and the rules they had to enforce. I made the design calls: what counts as proof of payment, oldest-invoice-first, who can mark what. Claude built to them and I pushed back where the first pass was too loose. Gemini in Antigravity handled quick edits, smaller fixes and running smoke tests. The skill is mine; the tone and the payment-intent rules are the part I didn't want AI guessing at.
 
 One example of the back-and-forth being worth it: the first smoke test failed on "staff cannot release a part-paid invoice" because the invoice I picked had already gone out on credit so the agent warned about the handover instead of the balance. The code was right and my test was wrong. That precedence (*you already gave this away* beats *this isn't paid yet*) is now asserted on purpose.

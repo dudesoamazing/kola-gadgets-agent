@@ -4,7 +4,7 @@ Context for Claude Code. Read this first, then `docs/brief.md` for the official 
 
 ## Who and what
 
-- **Marvin Ogah**, product designer (8 years, mostly fintech). Writes React/React Native, uses Cursor and Claude Code. Applying to TSG Labs for **Product Management** first, **Growth** or **Technical Product Management** second.
+- **Marvin Ogah**, product designer (8 years, mostly fintech). Writes React/React Native, uses Cursor and Claude Code. Applying to TSG Labs for **Growth** first, **Technical Product Management** second (changed from Product Management on 29 Oct). Growth is scored on problem choice with a measurable growth outcome.
 - **The exercise:** build a Chord agent that does one useful job for a real business on WhatsApp, end to end. Must include a skill we wrote, a custom tool that calls an external system and a full simulator conversation where the tool takes a real action. Budget ~6 hours. Full brief: `docs/brief.md` (confidential, never commit it).
 - **Marvin wants to understand the fundamentals** behind decisions, not just get code. Explain the why in plain English, briefly.
 

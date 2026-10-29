@@ -46,6 +46,8 @@ On 29 Oct the same pattern showed up at sign-in, in three different shapes:
 
 **Why it matters.** At Kola's counter, "who is this?" sits behind every release. Without a sender identity, the agent can't tell Ada from someone that's holding her phone or from a stranger who just types "it's Ada".
 
+**How I found the cause.** The skills, MCP and "build a teammate" docs didn't say what a tool receives about the sender. I asked TSG on 20 Oct and built on phone numbers while I waited. Their reply on 22 Oct confirmed tools receive nothing about the sender. I then removed phone identity and rebuilt around a code and PIN.
+
 **Fix.** Kola gives each person an account code and a 4-digit PIN and the server checks both on every tool call. Three decisions worth noting:
 - An unknown code and a wrong PIN get the same reply so the agent can't be used to find real account codes.
 - Five wrong PINs lock the account and flag Kola. A 4-digit PIN is only 10,000 guesses so resisting brute force matters more than the risk that someone locks a reseller out on purpose, which Kola would see in the Flags tab. Only the right PIN is told the account is locked so the lock doesn't reveal which codes exist.

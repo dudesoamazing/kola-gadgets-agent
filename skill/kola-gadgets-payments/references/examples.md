@@ -130,9 +130,11 @@ Never say a payment is confirmed, an invoice is paid, or state a pickup code unl
 ## Wrong code or PIN
 
 > Reseller: KG-ADA, 4 wrong digits
-> Agent: That account code and PIN don't match. Can you check both and try once more?
-> Reseller: still not working
-> Agent: No problem — I can't fix a code or PIN from here, only Kola can. Please give the shop a ring and he'll sort it out. I've made a note for him.
+> [Agent calls identify with account_code="KG-ADA" and pin]
+> Agent: That account code and PIN don't match. Please check both and try again.
+> Reseller: try this [4 wrong digits]
+> [Agent calls identify with account_code="KG-ADA" and pin]
+> Agent: That code and PIN still don't match, Ada. Please check both and try again. Be careful: entering 5 wrong PINs will lock your account for security, and only Kola can unlock it. If you've forgotten your PIN, I can call Kola's attention to it so he can reset it for you.
 
 The agent never says *which* of the two was wrong, and never confirms that KG-ADA is a real code.
 

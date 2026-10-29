@@ -114,7 +114,7 @@ async function authenticated(
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. Call identify on every attempt they send.",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. If this is their second or subsequent failed attempt, warn them that 5 wrong attempts will lock their account for security and only Kola can unlock it. Offer to call Kola's attention to it so he can reset their PIN. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. You must call identify on every attempt.",
       ),
     };
   }
@@ -142,7 +142,7 @@ async function authenticated(
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. Call identify on every attempt they send.",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. If this is their second or subsequent failed attempt, warn them that 5 wrong attempts will lock their account for security and only Kola can unlock it. Offer to call Kola's attention to it so he can reset their PIN. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. You must call identify on every attempt.",
       ),
     };
   }

@@ -58,13 +58,17 @@ const invoiceArg = z
 /**
  * Consecutive failed PIN attempts per account code, this process only.
  *
- * A 4-digit PIN is 10,000 guesses, and a chat agent will answer all day. We
- * do not lock the account — that would hand anyone a way to freeze a
- * reseller out before a pickup — but after five misses Kola gets told, so a
- * real attempt to guess a code leaves a trace in the Flags tab.
+ * A 4-digit PIN is 10,000 guesses, and a chat agent will answer all day. After
+ * five misses the account is locked and Kola is flagged. A locked account
+ * refuses even the right PIN until Kola clears it (in this demo, a server
+ * restart). Only someone who gives the right PIN is told the account is
+ * locked; a wrong PIN still gets the generic reply, so locking never reveals
+ * which codes exist. The trade-off: anyone who knows a code can lock that
+ * reseller out, which Kola sees in the Flags tab.
  */
 const failedAttempts = new Map<string, number>();
-const FAILURES_BEFORE_FLAG = 5;
+const lockedAccounts = new Set<string>();
+const FAILURES_BEFORE_LOCK = 5;
 
 /**
  * Wrong pickup codes per staff account, and the accounts shut out as a result.
@@ -98,29 +102,47 @@ async function authenticated(
   const attempted = (accountCode ?? "").trim().slice(0, 40);
   const result = await ledger.authenticate(accountCode, pin);
 
+  if (lockedAccounts.has(code)) {
+    if (result.ok) {
+      return {
+        error: fail(
+          "account_locked",
+          "This account is locked after too many wrong PINs. Tell them plainly that, for their protection, they need to contact Kola to unlock it. Do not retry.",
+        ),
+      };
+    }
+    return {
+      error: fail(
+        "not_permitted",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
+      ),
+    };
+  }
+
   if (!result.ok) {
     const misses = (failedAttempts.get(code) ?? 0) + 1;
     failedAttempts.set(code, misses);
 
-    if (misses === FAILURES_BEFORE_FLAG) {
+    if (misses >= FAILURES_BEFORE_LOCK) {
+      lockedAccounts.add(code);
+      failedAttempts.delete(code);
       // Best effort: a flag failing must not turn a wrong PIN into a crash.
       try {
         await ledger.appendFlag({
           created_at: lagosTimestamp(),
           account_code: "",
           invoice_id: "",
-          summary: `${FAILURES_BEFORE_FLAG} failed sign-in attempts for account code "${attempted}" in one session. Someone may be guessing codes or PINs.`,
+          summary: `${FAILURES_BEFORE_LOCK} failed sign-in attempts for account code "${attempted}". The account is locked until you clear it. Someone may be guessing PINs.`,
         });
       } catch (error) {
-        console.error("[auth] could not log repeated failures:", error);
+        console.error("[auth] could not log the lockout:", error);
       }
     }
 
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more — do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
-        { attempts_this_session: misses },
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
       ),
     };
   }

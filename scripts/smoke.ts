@@ -253,24 +253,17 @@ async function main(): Promise<void> {
     const ok1 = await call("identify", { ...ADA });
     check("identify never echoes the PIN", !JSON.stringify(ok1).includes("4461"), ok1);
 
-    // A 4-digit PIN is 10,000 guesses and the agent will answer all day, so
-    // repeated misses have to leave a trace for Kola.
+    // Five misses on a code that doesn't exist still leave a trace for Kola.
     for (let attempt = 0; attempt < 5; attempt++) {
-      await call("identify", { account_code: "KG-CHIDI", pin: "0001" });
+      await call("identify", { account_code: "KG-NOBODY", pin: "0001" });
     }
-    const bruteFlags = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
+    const probeFlags = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
     check(
       "five failed attempts on one code flags the owner",
-      bruteFlags.includes("failed sign-in attempts") && bruteFlags.includes("KG-CHIDI"),
-      bruteFlags,
+      probeFlags.includes("failed sign-in attempts") && probeFlags.includes("KG-NOBODY"),
+      probeFlags,
     );
-    check("the flag does not record the attempted PIN", !bruteFlags.includes("0001"), bruteFlags);
-    const chidiStillWorks = await call("identify", { account_code: "KG-CHIDI", pin: "6673" });
-    check(
-      "but the account is not locked out — the right PIN still works",
-      chidiStillWorks.role === "reseller",
-      chidiStillWorks,
-    );
+    check("the flag does not record the attempted PIN", !probeFlags.includes("0001"), probeFlags);
 
     // ------------------------------------------------------------ balance ---
     section("Balance");
@@ -822,6 +815,33 @@ async function main(): Promise<void> {
     );
     check("no PIN is ever written to the ledger", !paymentsCsv.includes("4461"), paymentsCsv);
     check("verified payments carry a timestamp", new RegExp(`${reference},.*success,.*\\d{2}:\\d{2}`).test(paymentsCsv));
+
+
+    // ------------------------------------------------------------ lockout ---
+    // Runs last, because it locks a real account for the rest of the process.
+    section("PIN lockout");
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await call("identify", { account_code: "KG-CHIDI", pin: "0001" });
+    }
+    const lockFlagsCsv = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
+    check(
+      "five wrong PINs lock the account and flag the owner",
+      lockFlagsCsv.includes("KG-CHIDI") && lockFlagsCsv.includes("locked"),
+      lockFlagsCsv,
+    );
+    const lockedRight = await call("identify", { account_code: "KG-CHIDI", pin: "6673" });
+    check("a locked account refuses even the right PIN", lockedRight.error === "account_locked", lockedRight);
+    const lockedWrong = await call("identify", { account_code: "KG-CHIDI", pin: "0002" });
+    const nobody = await call("identify", { account_code: "KG-NOBODY2", pin: "0002" });
+    check(
+      "a wrong PIN on a locked account looks exactly like an unknown code",
+      lockedWrong.error === "not_permitted" && lockedWrong.message === nobody.message,
+      { lockedWrong, nobody },
+    );
+    const lockedTool = await call("get_reseller_balance", { account_code: "KG-CHIDI", pin: "6673" });
+    check("every tool honours the lock, not just identify", lockedTool.error === "account_locked", lockedTool);
+    const otherStillWorks = await call("identify", { ...ADA });
+    check("other accounts are unaffected", otherStillWorks.role === "reseller", otherStillWorks);
 
     await client.close();
   } finally {

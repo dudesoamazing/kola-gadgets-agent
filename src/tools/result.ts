@@ -8,6 +8,7 @@
 export type ErrorCode =
   | "unknown_sender"
   | "not_permitted"
+  | "account_locked"
   | "not_found"
   | "invalid_amount"
   | "nothing_outstanding"

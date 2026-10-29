@@ -11,6 +11,10 @@ interface MockTransaction {
 
 const transactions = new Map<string, MockTransaction>();
 
+export function resetMockPaystack(): void {
+  transactions.clear();
+}
+
 /**
  * Stand-in for Paystack test mode, used when PAYSTACK_SECRET_KEY is absent.
  *

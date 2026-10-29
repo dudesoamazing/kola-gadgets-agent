@@ -1,0 +1,20 @@
+name: Demo reset
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger demo reset
+        env:
+          DEMO_RESET_URL: ${{ secrets.DEMO_RESET_URL }}
+        run: |
+          if [ -z "$DEMO_RESET_URL" ]; then
+            echo "DEMO_RESET_URL secret is not set"
+            exit 1
+          fi
+          curl -fsS "$DEMO_RESET_URL"

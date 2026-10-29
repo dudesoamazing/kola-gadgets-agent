@@ -1,6 +1,7 @@
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express, { type Request, type Response } from "express";
 import { config, configProblems } from "./config.js";
+import { registerDemoRoutes } from "./demo.js";
 import { getLedger } from "./ledger/index.js";
 import { registerMockCheckout } from "./mock-checkout.js";
 import { createMcpServer } from "./server.js";
@@ -132,6 +133,8 @@ app.all("/mcp", (req: Request, res: Response) => {
 if (config.paystack.mode === "mock") {
   registerMockCheckout(app);
 }
+
+registerDemoRoutes(app);
 
 const problems = configProblems();
 if (problems.length > 0) {

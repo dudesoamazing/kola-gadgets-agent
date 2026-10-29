@@ -18,6 +18,17 @@ WhatsApp simulator → Chord teammate (our skill) → this MCP server → Google
 | Deployment field notes | [`docs/field-notes.md`](docs/field-notes.md) |
 | Go-live note for the owner | [`docs/go-live-note.md`](docs/go-live-note.md) |
 
+## How to try it
+
+You can review this in three ways:
+
+1. **Watch (3 min):** The demo video walks through the full payment and pickup flow. The link is in the submission Drive folder.
+2. **Try it live (10 min):** The Chord chat link and Reset demo link are in the submission slide deck. Credentials and live links are kept out of this repo because the repo is public.
+   - **Test accounts:** Reseller `KG-ADA` (PIN `4461`), backup reseller `KG-EMEKA` (PIN `5529`) and staff `KG-TUNDE` (PIN `2270`).
+   - **Suggested path:** Say "how much I owe" → say "send acct dets" → pay with the Paystack test option "Success" → say "sent" → sign in as `KG-TUNDE` and give the pickup code → give the same code again.
+   - **If anything is already paid or locked:** Open the Reset demo link. It reseeds the ledger so Ada owes ₦4,360,000 again and clears every lock. The demo also resets automatically every night at 03:00 Lagos time.
+3. **Run it yourself (5 min):** Run `npm install` and then `npm run smoke`. No accounts or keys needed.
+
 ## The eight tools
 
 | Tool | Who can use it | What it does |

@@ -84,6 +84,17 @@ const handoverLocks = new Set<string>();
 const WRONG_CODES_BEFORE_LOCK = 3;
 
 /**
+ * Clear every in-memory counter and lock for the demo reset endpoint.
+ */
+export function resetToolState(): void {
+  failedAttempts.clear();
+  lockedAccounts.clear();
+  wrongCodeAttempts.clear();
+  handoverLocks.clear();
+  verifyLocks.clear();
+}
+
+/**
  * Check the credentials on this call and return the person, or the refusal
  * the tool should hand back.
  *

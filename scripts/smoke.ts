@@ -127,6 +127,9 @@ async function main(): Promise<void> {
     });
     check("POST /mcp with a wrong token is 401", wrongAuth.status === 401, wrongAuth.status);
 
+    const resetOff = await fetch(`http://127.0.0.1:${port}/demo/reset?token=deliberate_token`);
+    check("demo reset returns 404 when DEMO_MODE is off", resetOff.status === 404, resetOff.status);
+
     const client = await connect(port);
     const call = async (name: string, args: Json): Promise<Json> => {
       let result;
@@ -975,6 +978,116 @@ async function main(): Promise<void> {
   } finally {
     rejectServer.kill("SIGTERM");
     stub.close();
+  }
+
+  // ----------------------------------------------------------- Demo reset ----
+  section("Demo reset");
+  const demoPort = 3981;
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "kola-demo-"));
+  for (const file of ["people.csv", "invoices.csv", "payments.csv", "flags.csv"]) {
+    fs.copyFileSync(path.join("data", file), path.join(demoDir, file));
+  }
+  const DEMO_TOKEN = "valid-demo-reset-token-sample";
+  const demoServer = await startServer(
+    {
+      MCP_BEARER_TOKEN: TOKEN,
+      LEDGER_BACKEND: "csv",
+      LEDGER_CSV_DIR: demoDir,
+      PAYSTACK_MODE: "mock",
+      PUBLIC_BASE_URL: `http://127.0.0.1:${demoPort}`,
+      PAYSTACK_SECRET_KEY: "",
+      DEMO_MODE: "true",
+      DEMO_RESET_TOKEN: DEMO_TOKEN,
+    },
+    demoPort,
+  );
+  try {
+    const wrongTokenRes = await fetch(`http://127.0.0.1:${demoPort}/demo/reset?token=wrong-token`);
+    check("demo reset returns 403 with a wrong token", wrongTokenRes.status === 403, wrongTokenRes.status);
+    const missingTokenRes = await fetch(`http://127.0.0.1:${demoPort}/demo/reset`);
+    check("demo reset returns 403 with a missing token", missingTokenRes.status === 403, missingTokenRes.status);
+
+    const client = await connect(demoPort);
+
+    // Make a payment on Ada: pay INV-104 and INV-109 (₦2,710,000)
+    const link = await client.callTool({
+      name: "create_payment_link",
+      arguments: { ...ADA, invoice_ids: ["INV-104", "INV-109"] },
+    });
+    const linkPayload = ((link as Json).structuredContent ?? JSON.parse((link as Json).content[0].text)) as Json;
+    const ref = String(linkPayload.reference);
+    await fetch(`http://127.0.0.1:${demoPort}/mock/checkout/${ref}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "outcome=success",
+    });
+    await client.callTool({
+      name: "verify_payment",
+      arguments: { ...ADA, reference: ref },
+    });
+    const balBeforeReset = await client.callTool({
+      name: "get_reseller_balance",
+      arguments: { ...ADA },
+    });
+    const balBeforePayload = ((balBeforeReset as Json).structuredContent ?? JSON.parse((balBeforeReset as Json).content[0].text)) as Json;
+    check("Ada balance was reduced by payment before reset", balBeforePayload.total_outstanding_ngn === 1_650_000, balBeforePayload.total_outstanding_ngn);
+
+    // Lock an account (KG-CHIDI with 5 wrong attempts)
+    for (let i = 1; i <= 5; i++) {
+      await client.callTool({
+        name: "identify",
+        arguments: { account_code: "KG-CHIDI", pin: `999${i}` },
+      });
+    }
+    const lockedBeforeReset = await client.callTool({
+      name: "identify",
+      arguments: { account_code: "KG-CHIDI", pin: "6673" },
+    });
+    const lockedPayload = ((lockedBeforeReset as Json).structuredContent ?? JSON.parse((lockedBeforeReset as Json).content[0].text)) as Json;
+    check("KG-CHIDI is locked before reset", lockedPayload.error === "account_locked", lockedPayload);
+
+    // Call demo reset with the right token
+    const resetRes = await fetch(`http://127.0.0.1:${demoPort}/demo/reset?token=${DEMO_TOKEN}`);
+    check("demo reset returns 200 with right token", resetRes.status === 200, resetRes.status);
+    const html = await resetRes.text();
+    check(
+      "reset returns success page",
+      html.includes("Demo reset. Ada owes ₦4,360,000 again and all locks are cleared. You can start testing."),
+      html,
+    );
+
+    // After reset: Ada balance restored to ₦4,360,000
+    const balAfterReset = await client.callTool({
+      name: "get_reseller_balance",
+      arguments: { ...ADA },
+    });
+    const balAfterPayload = ((balAfterReset as Json).structuredContent ?? JSON.parse((balAfterReset as Json).content[0].text)) as Json;
+    check(
+      "reset restores Ada seed balance (₦4,360,000)",
+      balAfterPayload.total_outstanding_ngn === 4_360_000 && balAfterPayload.invoices?.length === 3,
+      balAfterPayload,
+    );
+
+    // After reset: locked account signs in again
+    const chidiAfterReset = await client.callTool({
+      name: "identify",
+      arguments: { account_code: "KG-CHIDI", pin: "6673" },
+    });
+    const chidiAfterPayload = ((chidiAfterReset as Json).structuredContent ?? JSON.parse((chidiAfterReset as Json).content[0].text)) as Json;
+    check(
+      "locked account signs in again after reset",
+      chidiAfterPayload.role === "reseller" && chidiAfterPayload.name === "Chidi Eze",
+      chidiAfterPayload,
+    );
+
+    // Second call inside 60s returns 200 without resetting again
+    const rateLimitRes = await fetch(`http://127.0.0.1:${demoPort}/demo/reset?token=${DEMO_TOKEN}`);
+    check("second reset call inside 60s returns 200", rateLimitRes.status === 200, rateLimitRes.status);
+
+    await client.close();
+  } finally {
+    demoServer.kill("SIGTERM");
+    fs.rmSync(demoDir, { recursive: true, force: true });
   }
 
   console.log(`\n[1m${passed} passed, ${failed} failed[0m`);

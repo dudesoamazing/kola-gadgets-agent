@@ -222,7 +222,7 @@ Each of these came from a real failure in the simulator. Don't undo them.
 
 ## Deliverables (from the brief)
 
-1. Role preference + problem statement → `docs/problem-statement.md`
+1. Role preference + problem statement → `docs/problem-statement.md` (gitignored; sent with the submission, not kept in the repo)
 2. Working agent left live on Chord
 3. Repo with skill files, tool code and a short README (include how AI tools were used) → `README.md` drafted
 4. 3-minute screen recording. Centrepiece: "send acct dets" → payment link; "I don send am to your account" read correctly as a payment claim; staff release check

@@ -74,3 +74,16 @@ On 29 Oct the same pattern showed up at sign-in, in three different shapes:
 **11. The MCP SDK replies with SSE by default.** Chord accepts JSON or SSE but doesn't say which it prefers. *Chord should:* show recommendations.
 
 **12. Dark-mode send button.** When active, the button turns white but the arrow stays white so it disappears. *Chord should:* make the arrow dark on the active state.
+
+## What I'd build next
+
+What stopped me is in the notes above. With more time I'd build these, in this order:
+
+1. **Paystack webhooks.** The server learns a payment succeeded the moment it happens. The ledger updates even if the reseller never types "sent". It takes the model out of the most important step, the root of note 1.
+2. **An owner "confirm transfer" tool.** Kola's resellers will keep sending bank transfers. Today he can't turn a confirmed transfer into a pickup code. One message from him should do it.
+3. **WhatsApp alerts to Kola** for locked accounts, disputes, large payments and unconfirmed transfers, instead of lines waiting in the Flags tab.
+4. **Owner account tools:** add a reseller, reset a PIN and unlock an account, with PINs stored hashed. Kola should never edit the Sheet by hand or need a developer.
+5. **Payment reminders on credit**, polite and timed around due dates. I left this out on purpose. It's the clearest growth lever: measure days to collect and unmatched payments before and after.
+6. **Sign-in by WhatsApp number** once Chord passes a sender ID. The PIN then becomes a one-time step.
+7. **A staff "due for pickup today" list** showing items but never codes. Also pickup codes that expire if unused.
+8. **Production hardening:** a database instead of the Sheet, locks that survive restarts and an always-on server.

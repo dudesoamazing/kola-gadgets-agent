@@ -1,8 +1,8 @@
 # Go-live note: your payments assistant
 
-Kola, this assistant answers your WhatsApp line for one job: keeping payments and pickups straight.
+Hi Kola Gadgets, this AI assistant answers your WhatsApp line for one job: confirming payments in real time and keeping pickups secure.
 
-**What it does.** When a reseller asks for your account details, it sends a Paystack link for the exact invoices instead so money arrives already matched to the goods. It confirms every payment with Paystack; screenshots and "I've sent it" don't count. Once an invoice is fully paid, the reseller gets a two-word pickup code. Staff release goods only when that code matches. Part payments never produce a code.
+**What it does.** When a reseller asks for your account details, it sends a Paystack link for the exact invoices instead so money arrives already matched to the goods. It confirms every payment with Paystack; screenshots, debit alerts, bank notifications, payment receipts and "I've sent it" don't count. Once an invoice is fully paid, the reseller gets a two-word pickup code. Staff release goods only when that code matches. Part payments never produce a code.
 
 **What it won't do.** Nobody can mark an invoice paid by asking, not even staff. It can't see your bank account, add invoices, change prices or reset PINs. It never reads a pickup code out to staff.
 
@@ -17,5 +17,5 @@ Kola, this assistant answers your WhatsApp line for one job: keeping payments an
 **Honest limits today**
 - Nobody is alerted. Problems land in the Flags tab so check it every morning.
 - Bank transfers still need you. The assistant flags them but only a Paystack payment creates a pickup code so for a transfer you confirm the money and approve the release yourself.
-- PINs sit in the Sheet as plain text. Keep the Sheet private.
+- PINs sit in the Sheet as plain text. Keep the Sheet private and secure.
 - Five wrong PINs lock an account. Unlocking it currently needs the server restarted so ask your developer until an unlock button exists.

@@ -17,7 +17,7 @@ Neither was true. The server log shows `create_payment_link`, then nothing until
 
 **Fix.** I removed every example value from the tool descriptions and added a smoke test that fails if one comes back. I also moved the rule "never confirm a payment or give a code unless a tool returned it this turn" to the top of the skill. The fix that mattered most was already there: the design never trusts the model's words for anything that moves stock.
 
-**What Chord should change.** Show the tool calls under each reply in the conversation view, for example a small "verify_payment ✓" chip or "no tools called". An operator would spot a confirmation with nothing behind it in seconds; it took me server logs and a spreadsheet. And say in the tool docs that descriptions are part of the prompt so example values can be copied.
+**What Chord should change.** Show the tool calls under each reply in the conversation view, for example a small "verify_payment ✓" chip or "no tools called". An operator would spot a confirmation with nothing behind it in seconds; it took me server logs and a spreadsheet. And say in the tool docs that descriptions are part of the prompt so example values can be copied. The same fabrication happened at sign-in on 29 Oct (the agent reported four PIN mismatches without calling identify, then admitted it), which strengthens the case for showing tool calls per turn in Chord.
 
 ## 2. Tool results don't carry over between turns so the agent lost the payment reference
 

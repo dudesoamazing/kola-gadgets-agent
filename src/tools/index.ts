@@ -114,7 +114,8 @@ async function authenticated(
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. If this is their second or subsequent failed attempt, warn them that 5 wrong attempts will lock their account for security and only Kola can unlock it. Offer to call Kola's attention to it so he can reset their PIN. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. You must call identify on every attempt.",
+        "Too many wrong attempts. Tell them the account may now be locked for their protection, that Kola has been notified, and to contact him at the shop. Don't invite more attempts.",
+        { attempts_remaining: 0 },
       ),
     };
   }
@@ -122,6 +123,7 @@ async function authenticated(
   if (!result.ok) {
     const misses = (failedAttempts.get(code) ?? 0) + 1;
     failedAttempts.set(code, misses);
+    const attempts_remaining = Math.max(0, FAILURES_BEFORE_LOCK - misses);
 
     if (misses >= FAILURES_BEFORE_LOCK) {
       lockedAccounts.add(code);
@@ -137,13 +139,24 @@ async function authenticated(
       } catch (error) {
         console.error("[auth] could not log the lockout:", error);
       }
+      return {
+        error: fail(
+          "not_permitted",
+          "Too many wrong attempts. Tell them the account may now be locked for their protection, that Kola has been notified, and to contact him at the shop. Don't invite more attempts.",
+          { attempts_remaining: 0 },
+        ),
+      };
+    }
+
+    let message =
+      "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists.";
+    if (attempts_remaining <= 2) {
+      const triesWord = attempts_remaining === 1 ? "try" : "tries";
+      message = `That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Tell them ${attempts_remaining} more wrong ${triesWord} will lock the account; only Kola can unlock it. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists.`;
     }
 
     return {
-      error: fail(
-        "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. If this is their second or subsequent failed attempt, warn them that 5 wrong attempts will lock their account for security and only Kola can unlock it. Offer to call Kola's attention to it so he can reset their PIN. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. You must call identify on every attempt.",
-      ),
+      error: fail("not_permitted", message, { attempts_remaining }),
     };
   }
 

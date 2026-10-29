@@ -820,9 +820,27 @@ async function main(): Promise<void> {
     // ------------------------------------------------------------ lockout ---
     // Runs last, because it locks a real account for the rest of the process.
     section("PIN lockout");
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await call("identify", { account_code: "KG-CHIDI", pin: "0001" });
+    let countdownMatches = true;
+    const countdownDetails: any[] = [];
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const realResult = await call("identify", { account_code: "KG-CHIDI", pin: `000${attempt}` });
+      const unknownResult = await call("identify", { account_code: "KG-NOBODY2", pin: `000${attempt}` });
+      const expectedRemaining = Math.max(0, 5 - attempt);
+      const ok =
+        realResult.attempts_remaining === expectedRemaining &&
+        unknownResult.attempts_remaining === expectedRemaining &&
+        realResult.message === unknownResult.message;
+      if (!ok) {
+        countdownMatches = false;
+        countdownDetails.push({ attempt, expectedRemaining, realResult, unknownResult });
+      }
     }
+    check(
+      "attempts_remaining counts down identically for a real code and an unknown code",
+      countdownMatches,
+      countdownDetails,
+    );
+
     const lockFlagsCsv = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
     check(
       "five wrong PINs lock the account and flag the owner",
@@ -835,7 +853,9 @@ async function main(): Promise<void> {
     const nobody = await call("identify", { account_code: "KG-NOBODY2", pin: "0002" });
     check(
       "a wrong PIN on a locked account looks exactly like an unknown code",
-      lockedWrong.error === "not_permitted" && lockedWrong.message === nobody.message,
+      lockedWrong.error === "not_permitted" &&
+        lockedWrong.message === nobody.message &&
+        lockedWrong.attempts_remaining === 0,
       { lockedWrong, nobody },
     );
     const lockedTool = await call("get_reseller_balance", { account_code: "KG-CHIDI", pin: "6673" });

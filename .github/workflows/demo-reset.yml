@@ -18,3 +18,4 @@ jobs:
             exit 1
           fi
           curl -fsS "$DEMO_RESET_URL"
+

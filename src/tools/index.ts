@@ -107,14 +107,14 @@ async function authenticated(
       return {
         error: fail(
           "account_locked",
-          "This account is locked after too many wrong PINs. Tell them plainly that, for their protection, they need to contact Kola to unlock it. Do not retry.",
+          "This account is locked after too many wrong PINs. Tell them plainly that, for their protection, the account is locked and only Kola can unlock it. Do not retry.",
         ),
       };
     }
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. Call identify on every attempt they send.",
       ),
     };
   }
@@ -142,7 +142,7 @@ async function authenticated(
     return {
       error: fail(
         "not_permitted",
-        "That account code and PIN don't match anything in the ledger. Ask them to check both and try once more. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. If they still can't get in, tell them to contact the shop so Kola can check.",
+        "That account code and PIN don't match anything in the ledger. Ask them to check both and try again. Do not guess, do not say which of the two was wrong, and do not reveal whether the code exists. Call identify on every attempt they send.",
       ),
     };
   }
@@ -1048,7 +1048,7 @@ export function registerTools(server: McpServer, publicBaseUrl: () => string): v
     {
       title: "Flag for the owner",
       description:
-        "Add a line to the Flags tab for Kola to review: a disputed amount, a reseller over their credit limit, a bank transfer the agent cannot confirm, or anything unresolved. Changes no balances. Tell the person the owner will follow up.",
+        "Add a line to the Flags tab for Kola to review: a disputed amount, a reseller over their credit limit, a bank transfer the agent cannot confirm, or anything unresolved. Changes no balances. Tell the person you have called Kola's attention to it so he can look into it and follow up.",
       inputSchema: {
         account_code: accountCodeArg,
         pin: pinArg,

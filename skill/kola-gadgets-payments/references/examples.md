@@ -131,13 +131,16 @@ Never say a payment is confirmed, an invoice is paid, or state a pickup code unl
 
 > Reseller: KG-ADA, 4 wrong digits
 > [Agent calls identify with account_code="KG-ADA" and pin]
-> Agent: That account code and PIN don't match. Please check both and try again.
+> Agent: That code and PIN don't match. Please check both and try again.
 > Reseller: 4333
 > [Reseller sends only a PIN; Agent reuses KG-ADA from earlier in the chat and calls identify with account_code="KG-ADA", pin="4333"]
-> Agent: That code and PIN still don't match, Ada. Please check both and try again.
+> Agent: That code and PIN don't match. Please check both and try again.
 > Reseller: 2323
 > [Agent reuses KG-ADA and calls identify with account_code="KG-ADA", pin="2323"]
-> Agent: That code and PIN don't match. 2 more wrong tries will lock the account; only Kola can unlock it. Please contact Kola at the shop and he'll reset it.
+> Agent: That code and PIN don't match. 2 more wrong tries will lock the account and only Kola can unlock it.
+> Reseller: 5557
+> [Agent reuses KG-ADA and calls identify with account_code="KG-ADA", pin="5557"]
+> Agent: Too many wrong attempts. The account may now be locked for your protection. Kola has been notified. Please contact him at the shop.
 
 The agent never says *which* of the two was wrong, and never confirms that KG-ADA is a real code.
 

@@ -2,7 +2,7 @@
 
 Three problems that shaped the build, then shorter findings ranked by impact. All times stated are Lagos time (WAT).
 
-## 1. The agent told a reseller she had paid when she hadn't
+## 1. The agent's replies didn't match what its tools did
 
 **What happened.** Twice on 28 Oct, Ada asked for a payment link for her AirPods, then said she had paid. Both times the agent replied with a confirmation and a pickup code:
 
@@ -11,13 +11,22 @@ Three problems that shaped the build, then shorter findings ranked by impact. Al
 
 Neither was true. The server log shows `create_payment_link`, then nothing until the next sign-in. `verify_payment` never ran. The Sheet still showed the payment as pending, the invoice unpaid and no code issued.
 
-**Why it matters.** For Kola, this is the worst message the agent can send. A reseller told she has paid sends her rider to the shop. Nothing left the shop only because release happens on the server: when Tunde entered each code, `record_handover` checked the ledger and refused it.
+On 29 Oct the same pattern showed up at sign-in, in three different shapes:
+- **It made up its own rules.** After two wrong PINs it refused to pass more attempts to the server ("I can't try any more PINs in this chat"), then accepted "last one, try this" and signed Ada in. It also offered to notify Kola, which it can't do before sign-in.
+- **It skipped the tool.** It told Ada four PINs didn't match without calling `identify`, then admitted it: "I told you they didn't match without actually running them through the system."
+- **It ignored the result.** With every attempt reaching the server, the fifth wrong PIN locked the account and the tool said so. The agent replied "1 more wrong try will lock the account", repeating its previous wording.
 
-**How I found the cause.** Chord's conversation view only shows text so it looked like a normal confirmation. I had added one log line per tool call the day before and putting that log next to the Sheet showed the missing call. The second code was the real clue. I had already removed MANGO-TIGER from the skill files but it was still in `record_handover`'s parameter description as an example. Tool descriptions are sent to the model on every turn so when it skipped the tool it copied the example. Where PEPPER-BISON came from is unknown; both are ordinary words.
+**Why it matters.** For Kola, a false "payment confirmed" is the worst message the agent can send: a reseller told she has paid sends her rider to the shop. At sign-in, a false "doesn't match" makes a reseller doubt a PIN that may be right. Nothing left the shop only because release and locking happen on the server: when Tunde entered each invented code, `record_handover` checked the ledger and refused it.
 
-**Fix.** I removed every example value from the tool descriptions and added a smoke test that fails if one comes back. I also moved the rule "never confirm a payment or give a code unless a tool returned it this turn" to the top of the skill. The fix that mattered most was already there: the design never trusts the model's words for anything that moves stock.
+**How I found the cause.** Chord's conversation view only shows text so every one of these looked like a normal reply. I added one log line per tool call and compared it with the Sheet and the chat. The MANGO-TIGER code was the clearest clue. I had removed it from the skill files but it was still in `record_handover`'s parameter description as an example. Tool descriptions are sent to the model on every turn so when it skipped the tool it copied the example.
 
-**What Chord should change.** Show the tool calls under each reply in the conversation view, for example a small "verify_payment ✓" chip or "no tools called". An operator would spot a confirmation with nothing behind it in seconds; it took me server logs and a spreadsheet. And say in the tool docs that descriptions are part of the prompt so example values can be copied. The same fabrication happened at sign-in on 29 Oct (the agent reported four PIN mismatches without calling identify, then admitted it), which strengthens the case for showing tool calls per turn in Chord.
+**Fix.** Each incident moved a decision from the model to the server:
+- No example values in tool descriptions, with a smoke test that fails if one comes back.
+- A rule at the top of the skill: never state a confirmation, code or mismatch unless a tool returned it in this turn.
+- The server counts PIN attempts and locks the account; the model only relays.
+- Sign-in replies come from the server as exact text the agent sends as written.
+
+**What Chord should change.** Show the tool calls under each reply in the conversation view, for example a small "verify_payment ✓" chip or "no tools called". An operator would spot a confirmation with nothing behind it in seconds; it took me server logs and a spreadsheet each time. And say in the tool docs that descriptions are part of the prompt so example values can be copied.
 
 ## 2. Tool results don't carry over between turns so the agent lost the payment reference
 

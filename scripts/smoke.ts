@@ -241,7 +241,7 @@ async function main(): Promise<void> {
     // becomes a way to enumerate which codes are live.
     check(
       "a wrong PIN and an unknown code give the identical message",
-      badPin.message === unknown.message,
+      badPin.message === unknown.message && badPin.say === unknown.say,
       { badPin: badPin.message, unknown: unknown.message },
     );
     check("and leaks no name or role", badPin.name === undefined && badPin.role === undefined, badPin);
@@ -822,6 +822,7 @@ async function main(): Promise<void> {
     section("PIN lockout");
     let countdownMatches = true;
     const countdownDetails: any[] = [];
+    let fifthRealResult: any;
     for (let attempt = 1; attempt <= 5; attempt++) {
       const realResult = await call("identify", { account_code: "KG-CHIDI", pin: `000${attempt}` });
       const unknownResult = await call("identify", { account_code: "KG-NOBODY2", pin: `000${attempt}` });
@@ -829,16 +830,27 @@ async function main(): Promise<void> {
       const ok =
         realResult.attempts_remaining === expectedRemaining &&
         unknownResult.attempts_remaining === expectedRemaining &&
-        realResult.message === unknownResult.message;
+        realResult.message === unknownResult.message &&
+        realResult.say === unknownResult.say;
       if (!ok) {
         countdownMatches = false;
         countdownDetails.push({ attempt, expectedRemaining, realResult, unknownResult });
+      }
+      if (attempt === 5) {
+        fifthRealResult = realResult;
       }
     }
     check(
       "attempts_remaining counts down identically for a real code and an unknown code",
       countdownMatches,
       countdownDetails,
+    );
+    check(
+      "the 5th miss returns the lock wording in say and attempts_remaining 0",
+      fifthRealResult?.attempts_remaining === 0 &&
+        typeof fifthRealResult?.say === "string" &&
+        fifthRealResult?.say.includes("locked for your protection"),
+      fifthRealResult,
     );
 
     const lockFlagsCsv = fs.readFileSync(path.join(dir, "flags.csv"), "utf8");
@@ -848,13 +860,18 @@ async function main(): Promise<void> {
       lockFlagsCsv,
     );
     const lockedRight = await call("identify", { account_code: "KG-CHIDI", pin: "6673" });
-    check("a locked account refuses even the right PIN", lockedRight.error === "account_locked", lockedRight);
+    check(
+      "a locked account refuses even the right PIN",
+      lockedRight.error === "account_locked" && typeof lockedRight.say === "string",
+      lockedRight,
+    );
     const lockedWrong = await call("identify", { account_code: "KG-CHIDI", pin: "0002" });
     const nobody = await call("identify", { account_code: "KG-NOBODY2", pin: "0002" });
     check(
       "a wrong PIN on a locked account looks exactly like an unknown code",
       lockedWrong.error === "not_permitted" &&
         lockedWrong.message === nobody.message &&
+        lockedWrong.say === nobody.say &&
         lockedWrong.attempts_remaining === 0,
       { lockedWrong, nobody },
     );

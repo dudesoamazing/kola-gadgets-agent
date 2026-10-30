@@ -219,6 +219,7 @@ Each of these came from a real failure in the simulator. Don't undo them.
 - **Before a simulator test:** push and wait for Render to show Live, paste changed skill files, reseed with `npm run setup:sheet -- --force`, start a new chat link.
 - **Verify with the server log, not the chat.** Every tool call logs one line (time, tool, duration, ok or error). One action in the chat should mean one line in the log.
 - **Smoke tests run on Marvin's Mac.** `node_modules` is built for macOS so a Linux run needs a separate `npm ci` copy.
+- **Never add Co-authored-by trailers to git commits.** Claude Code must never append `Co-Authored-By` or any AI attribution to commit messages. Commits must be authored and committed solely by Marvin because GitHub indexes co-authors as repository contributors.
 
 ## Deliverables (from the brief)
 

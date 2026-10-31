@@ -123,6 +123,10 @@ Two things worth knowing, both learned the hard way against the real test API an
 
 Register it in Chord as a custom tool with transport **Streamable HTTP**, URL `https://<host>/mcp`, auth type **bearer** and the token from `MCP_BEARER_TOKEN`. 
 
+**Health endpoints:**
+- `GET /live`: returns 200 `{"status":"ok"}` immediately without external calls, used by Render to confirm the process is up.
+- `GET /health`: deep check that tests the ledger and configuration (cached for 60 seconds), used by the uptime monitor.
+
 **Keeping the server awake:** Free-tier hosting (like Render) spins down after 15 minutes of inactivity, causing a cold start of up to ~50 seconds that can time out Chord's tool calls and coincided with a silent escalation to a human in testing. During testing, this is mitigated with an external pinger (e.g. UptimeRobot pinging `https://kola-gadgets-mcp.onrender.com/health` every 5 minutes). For production, the service should run on a paid, always-on instance so customers never hit cold starts.
 
 ## Troubleshooting

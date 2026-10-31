@@ -105,9 +105,17 @@ async function main(): Promise<void> {
   try {
     // ------------------------------------------------------------ health ----
     section("Health and auth");
+    const live = await fetch(`http://127.0.0.1:${port}/live`);
+    const liveJson = (await live.json()) as Json;
+    check("live returns 200", live.status === 200, live.status);
+    check("live reports ok", liveJson.status === "ok", liveJson);
+
     const health = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as Json;
     check("health reports ok", health.status === "ok", health);
     check("health names the csv backend", health.ledger?.backend === "csv", health.ledger);
+
+    const healthCached = (await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as Json;
+    check("health returns cached ok status", healthCached.status === "ok", healthCached);
 
     const noAuth = await fetch(`http://127.0.0.1:${port}/mcp`, {
       method: "POST",

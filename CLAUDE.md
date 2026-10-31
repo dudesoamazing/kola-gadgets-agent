@@ -69,7 +69,7 @@ Node + TypeScript, `@modelcontextprotocol/sdk` over Streamable HTTP (stateless),
 
 ```
 src/
-  index.ts            express app: bearer auth, /health, stateless /mcp
+  index.ts            express app: bearer auth, /live, /health, stateless /mcp
   server.ts           MCP server factory
   config.ts           env loading, startup config checks
   lib/format.ts       naira, kobo, Lagos timestamps, account-code/PIN/phone normalisation
@@ -180,7 +180,7 @@ Ownership is by account. See "Identity: account code + PIN" above. Codes and PIN
 
 ### Hosting (live)
 
-**`https://kola-gadgets-mcp.onrender.com`**: free Render web service from `render.yaml`, health check on `/health`, secrets in the dashboard (`sync: false`).
+**`https://kola-gadgets-mcp.onrender.com`**: free Render web service from `render.yaml`, health check on `/live`, secrets in the dashboard (`sync: false`).
 
 **Confirmed 25 Oct:** the free tier sleeps after ~15 minutes and Chord's first call to a cold server fails as **`gateway request failed 500`**. A retry works. **UptimeRobot pings `/health` every 5 minutes during testing** so the server shouldn't sleep. A cold start on 27 Oct coincided with the chat being escalated to a human with no reason given; if the agent stops answering, check Chord for a paused banner and hand the chat back. Written up in the field notes. The useful part is that Chord's error is identical whether the server 500'd, timed out or was asleep.
 

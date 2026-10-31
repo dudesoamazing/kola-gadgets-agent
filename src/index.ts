@@ -45,7 +45,74 @@ function bearerOk(req: Request): boolean {
   return given.equals(expected);
 }
 
+// -------------------------------------------------------------------- live --
+/**
+ * Lightweight liveness probe used by Render's healthCheckPath.
+ * Returns 200 immediately without hitting Google Sheets or Paystack so
+ * external slowdowns never trigger service restarts.
+ */
+app.get("/live", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok" });
+});
+
 // ------------------------------------------------------------------ health --
+interface CachedLedgerHealth {
+  status: "ok" | "error";
+  error?: string;
+  checkedAt: number;
+}
+
+let cachedLedgerHealth: CachedLedgerHealth | null = null;
+let inFlightLedgerHealth: Promise<CachedLedgerHealth> | null = null;
+let lastLoggedHealthError: string | null = null;
+const LEDGER_HEALTH_TTL_MS = 60_000;
+
+async function checkLedgerHealth(): Promise<CachedLedgerHealth> {
+  const now = Date.now();
+  if (cachedLedgerHealth && now - cachedLedgerHealth.checkedAt < LEDGER_HEALTH_TTL_MS) {
+    return cachedLedgerHealth;
+  }
+  if (inFlightLedgerHealth) {
+    return inFlightLedgerHealth;
+  }
+
+  inFlightLedgerHealth = (async () => {
+    let status: "ok" | "error" = "ok";
+    let errorMsg: string | undefined;
+
+    let timer: NodeJS.Timeout | undefined;
+    const healthTimeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Ledger healthCheck timed out after 5000ms")), 5000);
+    });
+
+    try {
+      await Promise.race([getLedger().healthCheck(), healthTimeout]);
+      status = "ok";
+      lastLoggedHealthError = null;
+    } catch (error) {
+      status = "error";
+      errorMsg = error instanceof Error ? error.message : String(error);
+      if (lastLoggedHealthError !== errorMsg) {
+        console.error("Health check error:", errorMsg);
+        lastLoggedHealthError = errorMsg;
+      }
+    } finally {
+      if (timer) clearTimeout(timer);
+      inFlightLedgerHealth = null;
+    }
+
+    const result: CachedLedgerHealth = {
+      status,
+      error: errorMsg,
+      checkedAt: Date.now(),
+    };
+    cachedLedgerHealth = result;
+    return result;
+  })();
+
+  return inFlightLedgerHealth;
+}
+
 /**
  * Note for whoever reads this next: Chord's own health probe returns HTTP 200
  * even when the check failed, so read the `status` field, not the status code.
@@ -53,19 +120,7 @@ function bearerOk(req: Request): boolean {
  */
 app.get(["/", "/health"], async (_req: Request, res: Response) => {
   const problems = configProblems();
-  let ledgerStatus = "unknown";
-  let ledgerError: string | undefined;
-  try {
-    const healthTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Ledger healthCheck timed out after 5000ms")), 5000),
-    );
-    await Promise.race([getLedger().healthCheck(), healthTimeout]);
-    ledgerStatus = "ok";
-  } catch (error) {
-    ledgerStatus = "error";
-    ledgerError = error instanceof Error ? error.message : String(error);
-    console.error("Health check error:", ledgerError);
-  }
+  const { status: ledgerStatus, error: ledgerError } = await checkLedgerHealth();
 
   const healthy = ledgerStatus === "ok" && problems.length === 0;
   res.status(healthy ? 200 : 503).json({
